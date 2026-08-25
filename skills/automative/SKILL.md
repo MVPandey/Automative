@@ -30,7 +30,9 @@ through the CLI so the right version is used and its integrity is checked.
    after a context reset) and follow it exactly. Its `references/` load when you need them.
 3. Loop: one change inside `scope`, then `automative try -m "..." --hypothesis "..."`, then read
    the verdict, then learn sparingly, then repeat. Never compute, guess, or announce a score
-   yourself. Never ask whether to continue. The harness ends the run.
+   yourself. Never ask whether to continue. The harness ends the run. To build on an earlier attempt
+   instead of the best (a crash worth fixing, a near miss worth combining), run
+   `automative checkout N` first; `automative tree` shows the attempts.
 4. Write everything a person will read later (commit messages, hypotheses, strategies, summaries)
    in plain English: one idea per sentence, name the actor, give the number, no filler, no em
    dashes, no claims of significance. The protocol's `references/writing.md` has the rules.

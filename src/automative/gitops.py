@@ -116,6 +116,24 @@ class Git:
             if target.is_file():
                 target.unlink()
 
+    def exists_in(self, rev: str, path: str) -> bool:
+        """Whether ``path`` is a blob in ``rev``."""
+        return self.run('cat-file', '-e', f'{rev}:{path}', check=False) == '' and (
+            self.run('ls-tree', '--name-only', rev, '--', path, check=False) != ''
+        )
+
+    def restore_from(self, rev: str, paths: tuple[str, ...]) -> None:
+        """Make the working tree copy of ``paths`` match ``rev`` without touching the index."""
+        present = tuple(p for p in paths if self.exists_in(rev, p))
+        if present:
+            self.run('restore', f'--source={rev}', '--worktree', '--', *present)
+        for rel in paths:
+            if rel in present:
+                continue
+            target = self.root / rel
+            if target.is_file():
+                target.unlink()
+
     def add_note(self, sha: str, text: str) -> None:
         self.run('notes', f'--ref={NOTES_REF}', 'add', '-f', '-m', text, sha)
 

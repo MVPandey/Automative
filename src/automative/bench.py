@@ -38,6 +38,7 @@ __all__ = [
     'CallableDriver',
     'ClaudePrintDriver',
     'Driver',
+    'DshHeadlessDriver',
     'GateParams',
     'ManualDriver',
     'TaskSpec',
@@ -312,15 +313,10 @@ class ClaudePrintDriver:
     extra_args: tuple[str, ...] = ()
 
     def drive(self, worktree: Path, task: TaskSpec, version: str, seed: int) -> None:
-        prompt = (
-            'You are running an automative benchmark cell. Run `automative session brief`, read the pinned '
-            'protocol it names, and follow it until the harness reports the run is done, then run '
-            '`automative run end`. Do not stop early and do not ask questions.'
-        )
         cmd = [
             'claude',
             '-p',
-            prompt,
+            BENCH_PROMPT,
             '--plugin-dir',
             str(self.plugin_root),
             '--permission-mode',
@@ -334,15 +330,68 @@ class ClaudePrintDriver:
         if self.model:
             cmd += ['--model', self.model]
         timeout = task.minutes * 60 + 900
-        env = dict(os.environ)
-        venv_bin = self.plugin_root / '.venv' / 'bin'
-        if venv_bin.is_dir():
-            env['PATH'] = f'{venv_bin}{os.pathsep}{env.get("PATH", "")}'
-        env['AUTOMATIVE_PLUGIN_ROOT'] = str(self.plugin_root)
         try:
-            subprocess.run(cmd, cwd=worktree, capture_output=True, text=True, timeout=timeout, check=False, env=env)
+            subprocess.run(
+                cmd,
+                cwd=worktree,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+                env=_agent_env(self.plugin_root, worktree),
+            )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise BenchError(f'claude -p failed for {task.task_id}: {exc}') from exc
+
+
+BENCH_PROMPT = (
+    'You are running an automative benchmark cell. Run `automative session brief`, read the pinned '
+    'protocol it names, and follow it until the harness reports the run is done, then run '
+    '`automative run end`. Do not stop early and do not ask questions.'
+)
+
+
+def _agent_env(plugin_root: Path, worktree: Path) -> dict[str, str]:
+    env = dict(os.environ)
+    venv_bin = plugin_root / '.venv' / 'bin'
+    if venv_bin.is_dir():
+        env['PATH'] = f'{venv_bin}{os.pathsep}{env.get("PATH", "")}'
+    env['AUTOMATIVE_PLUGIN_ROOT'] = str(plugin_root)
+    env['AUTOMATIVE_PROJECT_DIR'] = str(worktree)
+    return env
+
+
+@dataclass(frozen=True, slots=True)
+class DshHeadlessDriver:
+    """DeepSeek Harness one-shot mode (`dsh --profile headless`) with the native automative plugin mounted.
+
+    The patch file inserts the plugin from ``integrations/dsh`` and points it at this checkout through
+    ``AUTOMATIVE_PLUGIN_ROOT``. The model is whatever the dsh profile is configured with; ``model`` is
+    recorded on the cell for cache keying only.
+    """
+
+    plugin_root: Path
+    model: str | None = None
+    patch: Path | None = None
+    name: str = 'dsh'
+    extra_args: tuple[str, ...] = ()
+
+    def drive(self, worktree: Path, task: TaskSpec, version: str, seed: int) -> None:
+        patch = self.patch or self.plugin_root / 'integrations' / 'dsh' / 'cordis.patch.yml'
+        cmd = ['dsh', '--profile', 'headless', '--patch', str(patch), *self.extra_args, BENCH_PROMPT]
+        timeout = task.minutes * 60 + 900
+        try:
+            subprocess.run(
+                cmd,
+                cwd=worktree,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+                env=_agent_env(self.plugin_root, worktree),
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise BenchError(f'dsh headless failed for {task.task_id}: {exc}') from exc
 
 
 # ----- cells ---------------------------------------------------------------------------------------------

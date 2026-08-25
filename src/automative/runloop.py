@@ -16,9 +16,9 @@ from automative import evolution
 from automative import ledger as ledger_io
 from automative import lock as lock_io
 from automative import strategies as strategy_io
-from automative.decide import Decision, GreedyPolicy, Outcome, Policy, is_improvement
+from automative.decide import GreedyPolicy, Outcome, Policy, is_improvement
 from automative.disclosure import disclosure_card
-from automative.errors import GitError, IntegrityError, ScopeError, StateError, VerifyError
+from automative.errors import ContextError, GitError, IntegrityError, ScopeError, StateError, VerifyError
 from automative.gitops import Git, ref_for_try
 from automative.heartbeat import age_seconds, read_heartbeat
 from automative.paths import DOTDIR, ProjectPaths, find_root
@@ -38,8 +38,11 @@ from automative.state import (
     save_state,
 )
 from automative.verify import GuardResult, GuardStatus, LocalRunner, Runner, VerifyResult, measure, run_guards
+from automative.views import Brief, TryOutcome, render_brief, render_try
 
 __all__ = ['Brief', 'Project', 'RunLoop', 'TryOutcome', 'parse_prediction']
+
+SUGGESTIONS_IN_BRIEF = 3
 
 COMMIT_PREFIX = 'automative'
 BRANCH_PREFIX = 'automative'
@@ -61,53 +64,6 @@ class Project:
 
     def reload(self) -> 'Project':
         return replace(self, doc=load_spec(self.paths.spec_file))
-
-
-@dataclass(frozen=True, slots=True)
-class TryOutcome:
-    """What ``try`` returned to the agent."""
-
-    row: ledger_io.IterationRow
-    decision: Decision
-    budget: budget_rules.BudgetStatus
-    best: float
-    stopped: bool
-
-
-@dataclass(frozen=True, slots=True)
-class Brief:
-    """The recitation the agent reads at the top of every iteration."""
-
-    exists: bool
-    status: str
-    run_id: str | None
-    goal: str
-    metric_name: str
-    direction: str
-    verify_cmd: str
-    baseline: float | None
-    best: float | None
-    best_iter: int | None
-    iteration: int
-    iterations_budget: int
-    minutes_used: float
-    minutes_budget: int
-    tries_since_best: int
-    plateau_patience: int
-    recent: tuple[ledger_io.IterationRow, ...]
-    strategies: tuple[str, ...]
-    protocol_version: str
-    protocol_path: str | None
-    stop_reason: str | None
-    escalated: str | None
-    pending: bool
-    scope: tuple[str, ...]
-
-    @property
-    def exit_code(self) -> int:
-        if not self.exists:
-            return 4
-        return {'active': 0, 'done': 3, 'paused': 5}.get(self.status, 0)
 
 
 def parse_prediction(text: str | None, best: float) -> float | None:
@@ -175,6 +131,61 @@ class RunLoop:
 
     def _protocol(self) -> ProtocolVersion:
         return resolve_version(self.project.doc.spec.protocol)
+
+    # ----- what the agent sees --------------------------------------------------------------------------
+
+    def record_shown(
+        self, surface: str, text: str, *, store_text: bool = True, args: dict[str, object] | None = None
+    ) -> ledger_io.ShownRow | None:
+        """Log a model-visible text against the current view of the run. No run, no row."""
+        state = self.load_state()
+        if state is None:
+            return None
+        row = ledger_io.ShownRow(
+            run_id=state.run_id,
+            ts=self.clock(),
+            surface=surface,
+            context_sha=state.view_sha(),
+            sha256=ledger_io.text_sha(text),
+            chars=len(text),
+            text=text if store_text else None,
+            args=dict(args or {}),
+        )
+        ledger_io.append(self.paths.ledger_file, row)
+        return row
+
+    def _check_context(self, state: RunState) -> None:
+        """Refuse a try made against a view the harness never showed, or showed before the run changed."""
+        if not self.project.doc.spec.enforcement.logged_context:
+            return
+        last = ledger_io.last_shown(self.paths.ledger_file, state.run_id)
+        current = state.view_sha()
+        if last is not None and last.context_sha == current:
+            return
+        detail = (
+            'no view of the run has been shown since it last changed'
+            if last is None
+            else f'last shown view {last.context_sha} ({last.surface}) is not the current view {current}'
+        )
+        self._event(state.run_id, 'stale_context', detail)
+        raise ContextError(f'Refusing to try: {detail}. Run `automative session brief`, read it, then try again.')
+
+    def brief_text(self, *, as_json: bool = False) -> tuple[Brief, str]:
+        """Render the brief with strategy suggestions and record it as shown."""
+        suggestions = strategy_io.suggest_lines(
+            self.paths.strategies_file, self.project.doc.spec.tags, SUGGESTIONS_IN_BRIEF
+        )
+        brief = self.brief(suggestions)
+        if as_json:
+            payload = {
+                k: (v if not hasattr(v, 'model_dump') else v.model_dump(mode='json')) for k, v in brief.__dict__.items()
+            }
+            payload['recent'] = [r.model_dump(mode='json') for r in brief.recent]
+            text = json.dumps(payload, default=str)
+        else:
+            text = render_brief(brief)
+        self.record_shown('brief', text, args={'json': as_json})
+        return brief, text
 
     def _classify_dirty(self) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
         """Split dirty paths into (in_scope, protected, other); ``.automative/`` bookkeeping is ignored."""
@@ -378,6 +389,7 @@ class RunLoop:
             ),
         )
         self._write_budget_override(budget)
+        self.record_shown('start', render_brief(self.brief()))
         return state
 
     def _write_budget_override(self, budget: dict[str, object]) -> None:
@@ -409,6 +421,8 @@ class RunLoop:
         metric = spec.metric
         self._check_heartbeat(state)
         self._check_integrity(state)
+        self._check_context(state)
+        context_sha = state.view_sha()
         in_scope, protected_dirty, other_dirty = self._classify_dirty()
         if protected_dirty:
             detail = 'new protected files: ' + ', '.join(protected_dirty)
@@ -429,6 +443,8 @@ class RunLoop:
         predicted = parse_prediction(predict, best_before)
         iteration = state.iter + 1
         parent = self.git.head()
+        parent_iter = state.checked_out if state.checked_out is not None else state.best.iter
+        state.checked_out = None
         trailers = [f'Hypothesis: {hypothesis}', f'Run: {state.run_id}']
         if predicted is not None:
             trailers.insert(1, f'Predict: {predicted:g}')
@@ -509,6 +525,8 @@ class RunLoop:
             hypothesis=hypothesis,
             predicted_delta=predicted,
             strategy_ids=strategy_ids,
+            parent_iter=parent_iter,
+            context_sha=context_sha,
             commit=commit,
             parent_commit=parent,
             ref=ref,
@@ -546,7 +564,12 @@ class RunLoop:
         else:
             self._save(state)
         assert state.best is not None
-        return TryOutcome(row=row, decision=decision, budget=status, best=state.best.score, stopped=status.should_stop)
+        outcome = TryOutcome(
+            row=row, decision=decision, budget=status, best=state.best.score, stopped=status.should_stop
+        )
+        text = render_try(outcome)
+        self.record_shown('try', text, args={'iter': iteration})
+        return replace(outcome, text=text)
 
     def _heldout_not_worse(self, state: RunState, score: float | None) -> bool:
         if score is None:
@@ -575,8 +598,58 @@ class RunLoop:
             state.pending = None
         self._event(state.run_id, 'abandoned', reason, files=list(in_scope))
         state.stop_hook.blocks_since_last_try = 0
+        state.checked_out = None
         self._save(state)
+        self.record_shown('discard', 'Discarded in-scope changes: ' + (', '.join(in_scope) or '(none)'))
         return protected_dirty + other_dirty
+
+    def checkout(self, iteration: int) -> tuple[str, tuple[str, ...]]:
+        """Restore the in-scope files of attempt ``iteration`` (0 = baseline) so the next try builds on it.
+
+        Commits stay linear on the run branch; the tree is logical, recorded as ``parent_iter`` on the
+        next iteration row. Returns the revision restored from and the files that changed.
+        """
+        state = self.require_state()
+        if state.status is not RunStatus.ACTIVE:
+            raise StateError(f'Run {state.run_id} is {state.status.value}; `automative run resume` first')
+        if state.pending is not None:
+            raise StateError('A previous try is still pending; run `automative run resume` first')
+        in_scope, protected_dirty, other_dirty = self._classify_dirty()
+        if in_scope or protected_dirty or other_dirty:
+            raise ScopeError(
+                'Working tree has changes; `automative try` or `automative discard` them before a checkout: '
+                + ', '.join(in_scope + protected_dirty + other_dirty)
+            )
+        if iteration == 0:
+            rev = state.baseline_commit
+        else:
+            rows = {r.iter: r for r in ledger_io.iterations(self.paths.ledger_file, state.run_id)}
+            row = rows.get(iteration)
+            if row is None:
+                raise StateError(f'No attempt i{iteration} in run {state.run_id}')
+            rev = row.ref
+        spec = self.project.doc.spec
+        changed = self.git.changed_files('HEAD', rev)
+        scoped = tuple(p for p in changed if classify(p, spec.scope, spec.protected) is Classification.IN_SCOPE)
+        self.git.restore_from(rev, scoped)
+        state.checked_out = iteration
+        state.stop_hook.blocks_since_last_try = 0
+        self._save(state)
+        self._event(
+            state.run_id,
+            'checkout',
+            f'working tree restored from i{iteration}',
+            iteration=iteration,
+            files=list(scoped),
+        )
+        self.record_shown(
+            'checkout',
+            f'Working tree now matches attempt i{iteration} ({rev}) for: '
+            + (', '.join(scoped) or '(no differences from best)')
+            + f'. The next try records i{iteration} as its parent.',
+            args={'iteration': iteration},
+        )
+        return rev, scoped
 
     def pause(self) -> RunState:
         state = self.require_state()
@@ -614,6 +687,7 @@ class RunLoop:
             result = self._measure(None)
             self._event(state.run_id, 'reverify', result.outcome.value, score=result.score)
         self._event(state.run_id, 'resumed')
+        self.record_shown('resume', render_brief(self.brief()))
         return state
 
     def verify_only(self) -> VerifyResult:
@@ -721,4 +795,5 @@ class RunLoop:
             escalated=state.escalated,
             pending=state.pending is not None,
             scope=spec.scope,
+            checked_out=state.checked_out,
         )

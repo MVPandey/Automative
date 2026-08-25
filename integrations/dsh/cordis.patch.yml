@@ -1,0 +1,15 @@
+# Mount the automative plugin in a dsh profile.
+#
+#   dsh --profile headless --patch /path/to/Automative/integrations/dsh/cordis.patch.yml "/automative"
+#
+# The plugin must be resolvable from the profile: install it there first, for example
+# `pnpm add /path/to/Automative/integrations/dsh` inside the profile directory (`dsh --profile web
+# --dump-config` prints where that is). The environment variables come from the automative bench
+# driver; set them yourself for a hand-run session.
+- insert:
+    - id: automative
+      name: automative-dsh
+      inject: [shell]
+      config:
+        pluginRoot: !!js process.env.AUTOMATIVE_PLUGIN_ROOT
+        projectDir: !!js process.env.AUTOMATIVE_PROJECT_DIR

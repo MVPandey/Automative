@@ -164,6 +164,18 @@
       "default": null,
       "title": "Candidate Version"
     },
+    "checked_out": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Checked Out"
+    },
     "consecutive_errors": {
       "default": 0,
       "title": "Consecutive Errors",

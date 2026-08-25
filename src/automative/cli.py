@@ -236,20 +236,11 @@ def run_end(reason: str = '') -> None:
 
 def _print_brief(as_json: bool) -> None:
     try:
-        loop = _loop()
-        suggestions = strategy_io.suggest_lines(loop.paths.strategies_file, loop.project.doc.spec.tags, 3)
-        brief = loop.brief(suggestions)
+        brief, text = _loop().brief_text(as_json=as_json)
     except AutomativeError as exc:
         _fail(exc)
         return
-    if as_json:
-        payload = {
-            k: (v if not hasattr(v, 'model_dump') else v.model_dump(mode='json')) for k, v in brief.__dict__.items()
-        }
-        payload['recent'] = [r.model_dump(mode='json') for r in brief.recent]
-        typer.echo(json.dumps(payload, default=str))
-    else:
-        typer.echo(report.render_brief(brief))
+    typer.echo(text)
     raise typer.Exit(code=brief.exit_code)
 
 
@@ -284,7 +275,67 @@ def try_(
     except AutomativeError as exc:
         _fail(exc)
         return
-    typer.echo(report.render_try(outcome))
+    typer.echo(outcome.text)
+
+
+@app.command()
+def checkout(iteration: Annotated[int, typer.Argument(help='Attempt number; 0 is the baseline.')]) -> None:
+    """Restore attempt N's in-scope files so the next try builds on it instead of on the best."""
+    try:
+        loop = _loop()
+        with run_lock(loop.paths.dotdir):
+            rev, files = loop.checkout(iteration)
+    except AutomativeError as exc:
+        _fail(exc)
+        return
+    typer.echo(f'Working tree now matches i{iteration} ({rev}); changed: ' + (', '.join(files) or '(nothing)'))
+    typer.echo(f'The next `automative try` records i{iteration} as its parent. `automative discard` undoes this.')
+
+
+@app.command()
+def tree(run: Annotated[str | None, typer.Option('--run')] = None) -> None:
+    """Show the attempt tree: every try under the attempt it was built from."""
+    try:
+        loop = _loop()
+        state = loop.load_state()
+        run_id = run or (state.run_id if state else None)
+        rows = ledger_io.iterations(loop.paths.ledger_file, run_id)
+        baseline = None
+        for row in ledger_io.read(loop.paths.ledger_file):
+            if isinstance(row, ledger_io.RunStartRow) and row.run_id == run_id:
+                baseline = row.baseline.score
+        text = report.render_tree(rows, baseline)
+        loop.record_shown('tree', text, store_text=False, args={'run': run_id})
+    except AutomativeError as exc:
+        _fail(exc)
+        return
+    typer.echo(text)
+
+
+@app.command()
+def audit(
+    run: Annotated[str | None, typer.Option('--run')] = None,
+    json_: Annotated[bool, typer.Option('--json')] = False,
+) -> None:
+    """Replay the ledger: was every try made against a view the agent was actually shown?"""
+    from automative import audit as audit_io  # noqa: PLC0415 - keep base CLI import light
+
+    try:
+        loop = _loop()
+        state = loop.load_state()
+        run_id = run or (state.run_id if state else None)
+        if run_id is None:
+            raise AutomativeError('No run to audit')
+        result = audit_io.audit(ledger_io.read(loop.paths.ledger_file), run_id)
+    except AutomativeError as exc:
+        _fail(exc)
+        return
+    if json_:
+        typer.echo(json.dumps(dataclasses.asdict(result) | {'ok': result.ok}))
+    else:
+        typer.echo(report.render_audit(result))
+    if not result.ok:
+        raise typer.Exit(code=20)
 
 
 @app.command()
@@ -306,16 +357,22 @@ def discard(reason: str = '') -> None:
 def verify(json_: Annotated[bool, typer.Option('--json')] = False) -> None:
     """Measure the current tree without committing or deciding."""
     try:
-        result = _loop().verify_only()
+        loop = _loop()
+        result = loop.verify_only()
     except AutomativeError as exc:
         _fail(exc)
         return
     if json_:
-        typer.echo(json.dumps({'outcome': result.outcome.value, 'score': result.score, 'samples': result.samples}))
+        text = json.dumps({'outcome': result.outcome.value, 'score': result.score, 'samples': result.samples})
     elif result.ok:
-        typer.echo(f'{result.score:g}')
+        text = f'{result.score:g}'
     else:
-        typer.echo(f'{result.outcome.value}: {result.tail[-500:]}', err=True)
+        text = f'{result.outcome.value}: {result.tail[-500:]}'
+    loop.record_shown('verify', text, args={'json': json_})
+    if result.ok or json_:
+        typer.echo(text)
+    else:
+        typer.echo(text, err=True)
         raise typer.Exit(code=1)
 
 
@@ -343,11 +400,11 @@ def ledger(
     if status:
         rows = tuple(r for r in rows if r.decision.value == status)
     rows = rows[-last:] if last > 0 else rows
-    if json_:
-        for row in rows:
-            typer.echo(row.model_dump_json())
-    else:
-        typer.echo(report.render_ledger(rows))
+    text = '\n'.join(row.model_dump_json() for row in rows) if json_ else report.render_ledger(rows)
+    loop.record_shown(
+        'ledger', text, store_text=False, args={'last': last, 'status': status, 'run': run_id, 'json': json_}
+    )
+    typer.echo(text)
 
 
 @app.command('report')
@@ -363,7 +420,9 @@ def report_cmd(run: Annotated[str | None, typer.Option('--run')] = None) -> None
     except AutomativeError as exc:
         _fail(exc)
         return
-    typer.echo(report.render_summary(summary))
+    text = report.render_summary(summary)
+    loop.record_shown('report', text, store_text=False, args={'run': run_id})
+    typer.echo(text)
 
 
 # ----- protocol store ------------------------------------------------------------------------------------
@@ -541,10 +600,13 @@ def strategy_suggest(k: Annotated[int, typer.Option('-k')] = 5) -> None:
     """Top-k strategies for ideation."""
     try:
         loop = _loop()
-        for line in strategy_io.suggest_lines(loop.paths.strategies_file, loop.project.doc.spec.tags, k):
-            typer.echo(line)
+        lines = strategy_io.suggest_lines(loop.paths.strategies_file, loop.project.doc.spec.tags, k)
+        loop.record_shown('suggest', '\n'.join(lines), args={'k': k})
     except AutomativeError as exc:
         _fail(exc)
+        return
+    for line in lines:
+        typer.echo(line)
 
 
 @strategy_app.command('set-status')
@@ -592,9 +654,12 @@ def ledger_export(run: Annotated[str | None, typer.Option('--run')] = None) -> N
         loop = _loop()
         state = loop.load_state()
         run_id = run or (state.run_id if state else None)
-        typer.echo(report.render_compact(ledger_io.iterations(loop.paths.ledger_file, run_id)))
+        text = report.render_compact(ledger_io.iterations(loop.paths.ledger_file, run_id))
+        loop.record_shown('export', text, store_text=False, args={'run': run_id})
     except AutomativeError as exc:
         _fail(exc)
+        return
+    typer.echo(text)
 
 
 # ----- protocol evolution --------------------------------------------------------------------------------
@@ -683,14 +748,15 @@ app.add_typer(bench_app, name='bench')
 
 
 def _driver(name: str, model: str | None) -> bench_io.Driver:
-
+    root = Path(__file__).resolve().parents[2]
+    plugin_root = Path(os.environ.get('AUTOMATIVE_PLUGIN_ROOT') or root)
     if name == 'claude-p':
-        root = Path(__file__).resolve().parents[2]
-        plugin_root = Path(os.environ.get('AUTOMATIVE_PLUGIN_ROOT') or root)
         return bench_io.ClaudePrintDriver(plugin_root=plugin_root, model=model)
+    if name == 'dsh':
+        return bench_io.DshHeadlessDriver(plugin_root=plugin_root, model=model)
     if name == 'manual':
         return bench_io.ManualDriver(announce=typer.echo)
-    raise AutomativeError(f'Unknown driver {name!r}; use claude-p or manual')
+    raise AutomativeError(f'Unknown driver {name!r}; use claude-p, dsh, or manual')
 
 
 @bench_app.command('freeze')
@@ -740,7 +806,7 @@ def bench_run(
     candidate: Annotated[str, typer.Option('--candidate')],
     incumbent: Annotated[str | None, typer.Option('--incumbent', help='Default: candidate parent.')] = None,
     seeds: int = 2,
-    driver: Annotated[str, typer.Option('--driver', help='claude-p | manual')] = 'claude-p',
+    driver: Annotated[str, typer.Option('--driver', help='claude-p | dsh | manual')] = 'claude-p',
     model: Annotated[str | None, typer.Option('--model')] = None,
     no_cache: bool = False,
 ) -> None:

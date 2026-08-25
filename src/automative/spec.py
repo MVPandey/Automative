@@ -118,6 +118,7 @@ class EnforcementSpec(BaseModel):
 
     require_hooks: bool = True
     heartbeat_max_age_s: int = Field(default=120, ge=10)
+    logged_context: bool = True
 
 
 class Spec(BaseModel):

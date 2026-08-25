@@ -6,6 +6,7 @@ written atomically, and read by hooks. Everything else derives immutable values 
 
 import contextlib
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -124,10 +125,27 @@ class RunState(BaseModel):
     seed: int | None = None
     session_id: str | None = None
     model: str | None = None
+    checked_out: int | None = None
 
     @property
     def is_active(self) -> bool:
         return self.status is RunStatus.ACTIVE
+
+    def view_sha(self) -> str:
+        """Hash of the parts of the state a brief depends on. A try must cite the view it was made against."""
+        view = {
+            'iter': self.iter,
+            'status': self.status.value,
+            'stop_reason': self.stop_reason,
+            'best': self.best.model_dump() if self.best else None,
+            'tries_since_best': self.tries_since_best,
+            'consecutive_errors': self.consecutive_errors,
+            'denied_tool_calls': self.denied_tool_calls,
+            'pending': self.pending is not None,
+            'escalated': self.escalated,
+            'checked_out': self.checked_out,
+        }
+        return hashlib.sha256(json.dumps(view, sort_keys=True).encode('utf-8')).hexdigest()[:16]
 
 
 def now() -> datetime:

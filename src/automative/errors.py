@@ -8,6 +8,7 @@ __all__ = [
     'AutomativeError',
     'BenchError',
     'BudgetError',
+    'ContextError',
     'GitError',
     'IntegrityError',
     'ProtocolError',
@@ -83,3 +84,9 @@ class BenchError(AutomativeError):
     """Benchmark suite operation failed."""
 
     exit_code = 19
+
+
+class ContextError(AutomativeError):
+    """The agent is acting on a view of the run that the harness never showed it (or showed before it changed)."""
+
+    exit_code = 20

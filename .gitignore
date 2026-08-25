@@ -16,3 +16,6 @@ htmlcov/
 .automative/lock.json
 .automative/heartbeat
 .automative/runs/
+# dsh plugin build
+integrations/dsh/node_modules/
+integrations/dsh/lib/

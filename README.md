@@ -102,9 +102,17 @@ One paragraph. The agent rereads it every iteration.
 | `session brief` (alias `status`) | the short brief, at most 15 lines (exit 0 active, 3 done, 4 no run, 5 paused) |
 | `try -m ... --hypothesis ... [--predict] [--strategies]` | the one iteration primitive: commit, verify, decide, keep or revert, log |
 | `discard`, `verify`, `ledger`, `report` | recovery and inspection |
+| `checkout N`, `tree` | build the next try on an earlier attempt (0 is the baseline) instead of on the best; show the attempt tree |
+| `audit` | replay the ledger: was every try made against a brief the agent was actually shown, and does every stored text still match its hash |
 | `strategy add`, `show`, `suggest`, `set-status`, `merge`, `promote-global` | the learnings catalogue (an append only op log that the CLI curates) |
 | `protocol list`, `show`, `pin`, `install`, `candidate create`, `candidate validate`, `promote`, `reject`, `changelog` | the versioned protocol store, with bounded edits and instant rollback |
-| `bench freeze`, `list`, `run`, `report`; `evolve --propose`, `evolve --bench` | the benchmark suite and the promotion gate |
+| `bench freeze`, `list`, `run [--driver claude-p\|dsh\|manual]`, `report`; `evolve --propose`, `evolve --bench` | the benchmark suite and the promotion gate |
+
+Everything the CLI prints for the agent (the brief, each verdict, hook refusals, suggestions, even
+`verify`) is written to the ledger as a `shown` row with a hash of the text and of the run state it
+was rendered from. `try` refuses to run against a state the agent has not been shown, and `audit`
+checks the chain afterwards. The rule is the one DeepSeek Harness applies to its session log: if it
+reached the model, it is in the log.
 
 ## Layout
 
@@ -113,6 +121,7 @@ src/automative/                    CLI and harness: runloop, verify, decide, bud
                                    strategies, evolution, bench
 src/automative/protocol/versions/  bundled, checksummed protocol versions (0.0.0-null baseline, 1.0.0)
 skills/ commands/ agents/ hooks/   the Claude Code plugin: thin loader plus enforcement hooks
+integrations/dsh/                  the same enforcement as a native DeepSeek Harness plugin
 examples/sortbench/                demo target
 docs/DESIGN.md                     why it is built this way
 ```

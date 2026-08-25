@@ -137,6 +137,11 @@
           "title": "Commit",
           "type": "string"
         },
+        "context_sha": {
+          "default": "",
+          "title": "Context Sha",
+          "type": "string"
+        },
         "decision": {
           "$ref": "#/$defs/Outcome"
         },
@@ -214,6 +219,18 @@
         "parent_commit": {
           "title": "Parent Commit",
           "type": "string"
+        },
+        "parent_iter": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Iter"
         },
         "predicted_delta": {
           "anyOf": [
@@ -513,6 +530,70 @@
       "title": "Score",
       "type": "object"
     },
+    "ShownRow": {
+      "additionalProperties": false,
+      "description": "Text the harness put in front of the agent, so what the model saw can be replayed from the log.\n\n``context_sha`` is the view of the run the text was rendered from; a later try must cite the same\nview. ``text`` is omitted only for surfaces that are pure projections of the ledger (``ledger``,\n``report``, ``tree``), where ``args`` plus the log reproduce it.",
+      "properties": {
+        "args": {
+          "additionalProperties": true,
+          "title": "Args",
+          "type": "object"
+        },
+        "chars": {
+          "title": "Chars",
+          "type": "integer"
+        },
+        "context_sha": {
+          "title": "Context Sha",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "sha256": {
+          "title": "Sha256",
+          "type": "string"
+        },
+        "surface": {
+          "title": "Surface",
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "shown",
+          "default": "shown",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "ts",
+        "surface",
+        "context_sha",
+        "sha256",
+        "chars"
+      ],
+      "title": "ShownRow",
+      "type": "object"
+    },
     "VerifyOutcome": {
       "description": "How a verify invocation ended.",
       "enum": [
@@ -604,6 +685,9 @@
     },
     {
       "$ref": "#/$defs/RunEndRow"
+    },
+    {
+      "$ref": "#/$defs/ShownRow"
     }
   ]
 }

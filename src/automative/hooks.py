@@ -18,10 +18,10 @@ from automative import strategies as strategy_io
 from automative.errors import AutomativeError
 from automative.heartbeat import write_heartbeat
 from automative.paths import DOTDIR
-from automative.report import render_brief
 from automative.runloop import Project, RunLoop
 from automative.scope import Classification, classify
 from automative.state import RunState, RunStatus
+from automative.views import render_brief
 
 __all__ = ['HookResponse', 'handle']
 
@@ -153,6 +153,7 @@ def _record_denial(loop: RunLoop, state: RunState, reason: str, **data: object) 
         loop.halt(state, status.stop_reason, status.message, escalate=True)
     else:
         loop._save(state)
+    loop.record_shown('hook:deny', reason, args=dict(data))
 
 
 # ----- handlers ----------------------------------------------------------------------------------------
@@ -222,12 +223,9 @@ def _post_tool_use(loop: RunLoop, state: RunState, payload: dict[str, object]) -
         loop.git.restore(tracked)
     detail = 'protected files modified by a tool call: ' + ', '.join(changed)
     loop.halt(state, budget_rules.StopReason.INTEGRITY, detail, escalate=True)
-    return HookResponse(
-        payload={
-            'decision': 'block',
-            'reason': f'{detail}. They were restored from git and the run was stopped for a human to review.',
-        }
-    )
+    reason = f'{detail}. They were restored from git and the run was stopped for a human to review.'
+    loop.record_shown('hook:post-tool-use', reason)
+    return HookResponse(payload={'decision': 'block', 'reason': reason})
 
 
 def _post_tool_batch(loop: RunLoop, state: RunState) -> HookResponse:
@@ -267,6 +265,7 @@ def _stop(loop: RunLoop, state: RunState, payload: dict[str, object]) -> HookRes
         'Do not stop. Make ONE atomic change inside scope, then run `automative try -m "..." --hypothesis "..."`.\n\n'
         + brief
     )
+    loop.record_shown('hook:stop', reason, args={'blocks': state.stop_hook.blocks_since_last_try})
     return HookResponse(payload={'decision': 'block', 'reason': reason})
 
 
@@ -274,8 +273,9 @@ def _session_start(loop: RunLoop, state: RunState) -> HookResponse:
     if state.status is RunStatus.DONE:
         return HookResponse()
     suggestions = strategy_io.suggest_lines(loop.paths.strategies_file, loop.project.doc.spec.tags, 3)
-    text = render_brief(loop.brief(suggestions))
-    return HookResponse(stdout_text='automative: a run is active in this project.\n' + text)
+    text = 'automative: a run is active in this project.\n' + render_brief(loop.brief(suggestions))
+    loop.record_shown('hook:session-start', text)
+    return HookResponse(stdout_text=text)
 
 
 def _prompt_submit(loop: RunLoop, state: RunState) -> HookResponse:
@@ -286,6 +286,7 @@ def _prompt_submit(loop: RunLoop, state: RunState) -> HookResponse:
         f'[automative {state.run_id}: iter {brief.iteration}/{brief.iterations_budget or "inf"}, best {brief.best}, '
         f'{brief.tries_since_best} since best] Goal: {brief.goal}'
     )
+    loop.record_shown('hook:prompt-submit', text)
     return HookResponse(stdout_text=text)
 
 

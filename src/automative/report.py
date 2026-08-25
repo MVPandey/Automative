@@ -2,85 +2,26 @@
 
 from collections.abc import Sequence
 
-from automative.decide import Outcome
+from automative.audit import AuditResult
 from automative.disclosure import disclosure_card
 from automative.ledger import IterationRow, RunSummary
-from automative.runloop import Brief, TryOutcome
+from automative.views import Brief, TryOutcome, fmt, pct, render_brief, render_try
 
-__all__ = ['disclosure_card', 'render_brief', 'render_compact', 'render_ledger', 'render_summary', 'render_try']
+__all__ = [
+    'Brief',
+    'TryOutcome',
+    'disclosure_card',
+    'render_audit',
+    'render_brief',
+    'render_compact',
+    'render_ledger',
+    'render_summary',
+    'render_tree',
+    'render_try',
+]
 
-
-def _fmt(value: float | None) -> str:
-    return '-' if value is None else f'{value:g}'
-
-
-def _pct(value: float | None) -> str:
-    return '' if value is None else f' ({value:+.1f}%)'
-
-
-def render_brief(brief: Brief) -> str:
-    """The <=15-line recitation block."""
-    if not brief.exists:
-        return '\n'.join(
-            [
-                'AUTOMATIVE: no run in this project',
-                f'Goal: {brief.goal}',
-                f'Metric: {brief.metric_name} ({brief.direction} is better) via `{brief.verify_cmd}`',
-                f'Scope: {", ".join(brief.scope)}',
-                f'Protocol: {brief.protocol_version} at {brief.protocol_path or "(not installed)"}',
-                'Next: `automative run start` (after committing AUTOMATIVE.md), then follow the protocol.',
-            ]
-        )
-    lines = [
-        f'AUTOMATIVE run {brief.run_id}: {brief.status.upper()}'
-        + (f' ({brief.stop_reason})' if brief.stop_reason else ''),
-        f'Goal: {brief.goal}',
-        f'Metric: {brief.metric_name} ({brief.direction} is better), baseline {_fmt(brief.baseline)}, best '
-        f'{_fmt(brief.best)} (i{brief.best_iter})',
-        f'Budget: iter {brief.iteration}/{brief.iterations_budget or "inf"}, {brief.minutes_used:.0f}/'
-        f'{brief.minutes_budget or "inf"} min, {brief.tries_since_best}/{brief.plateau_patience or "inf"} since best',
-        f'Scope: {", ".join(brief.scope)}. Protocol {brief.protocol_version}: {brief.protocol_path or "(missing)"}',
-    ]
-    if brief.recent:
-        lines.append('Recent:')
-        for row in brief.recent:
-            score = f'{_fmt(row.verify.score)}{_pct(row.delta_pct)}'
-            lines.append(f'  i{row.iter} {row.decision.value:<12} {score}  {row.change[:70]}')
-    if brief.strategies:
-        lines.append('Strategies: ' + ' | '.join(brief.strategies[:3]))
-    if brief.pending:
-        lines.append('! A try is pending (crashed mid-verify): run `automative run resume`.')
-    if brief.escalated:
-        lines.append(f'! Escalated to human: {brief.escalated}')
-    if brief.status == 'active':
-        lines.append('Next: one change inside scope, then `automative try -m "..." --hypothesis "..."`.')
-    return '\n'.join(lines)
-
-
-def render_try(outcome: TryOutcome) -> str:
-    """The decision block the agent reads after ``try``."""
-    row = outcome.row
-    verdict = row.decision.value.upper()
-    head = f'i{row.iter} {verdict}: {row.decision_reason}'
-    detail = (
-        f'score {_fmt(row.verify.score)} vs best-before {_fmt(row.best_before)}'
-        f'{_pct(row.delta_pct)}, guard {row.guard.status.value}, verify {row.verify.runtime_s:.1f}s'
-    )
-    lines = [head, detail]
-    if row.decision is Outcome.KEEP:
-        lines.append(f'Kept commit {row.commit}; new best {_fmt(outcome.best)}.')
-    elif row.revert_commit:
-        lines.append(f'Reverted ({row.revert_commit}); tree is back at best {_fmt(outcome.best)}.')
-    if row.decision in (Outcome.CRASH, Outcome.TIMEOUT, Outcome.METRIC_ERROR) and row.verify.log:
-        lines.append(f'Log: {row.verify.log} (tail it; fix only if trivial, max 2 repairs per idea)')
-    if row.guard.failed_cmd:
-        lines.append(f'Guard failed: `{row.guard.failed_cmd}`. See {row.verify.log}')
-    if outcome.stopped:
-        reason = outcome.budget.stop_reason.value if outcome.budget.stop_reason else 'stopped'
-        lines.append(f'RUN STOPPED ({reason}): {outcome.budget.message}. Run `automative run end` for the summary.')
-    else:
-        lines.append(f'Budget: {outcome.budget.message}. Next: one change, then `automative try`.')
-    return '\n'.join(lines)
+_fmt = fmt
+_pct = pct
 
 
 def render_summary(summary: RunSummary) -> str:
@@ -123,3 +64,43 @@ def render_compact(rows: Sequence[IterationRow]) -> str:
             f'i{row.iter} {row.decision.value} delta {delta}{pred}{ids}{fail} | {row.change} | why: {row.hypothesis}'
         )
     return '\n'.join(out)
+
+
+def render_tree(rows: Sequence[IterationRow], baseline: float | None) -> str:
+    """The attempt tree: every try under the attempt it was built from (``parent_iter``)."""
+    children: dict[int, list[IterationRow]] = {}
+    for row in rows:
+        parent = row.parent_iter if row.parent_iter is not None else 0
+        children.setdefault(parent, []).append(row)
+    lines = [f'i0 baseline {_fmt(baseline)}']
+
+    def walk(node: int, depth: int) -> None:
+        for row in children.get(node, ()):
+            score = f'{_fmt(row.verify.score)}{_pct(row.delta_pct)}'
+            lines.append(f'{"  " * depth}i{row.iter} {row.decision.value:<12} {score}  {row.change[:60]}')
+            walk(row.iter, depth + 1)
+
+    walk(0, 1)
+    return '\n'.join(lines)
+
+
+def render_audit(result: AuditResult) -> str:
+    """Plain-text audit verdict."""
+    lines = [
+        f'Run {result.run_id}: {result.shown} shown rows, {result.iterations} tries'
+        + (f' ({result.legacy_iterations} from before context logging)' if result.legacy_iterations else ''),
+    ]
+    if result.by_surface:
+        lines.append('Surfaces: ' + ', '.join(f'{k} x{v}' for k, v in result.by_surface))
+    if result.stale_refusals:
+        lines.append(f'Stale-context refusals: {result.stale_refusals}')
+    if result.unlogged_iterations:
+        lines.append(
+            'Tries made against a view that was never shown: ' + ', '.join(f'i{i}' for i in result.unlogged_iterations)
+        )
+    if result.corrupt_shown:
+        lines.append(
+            'Shown rows whose text does not match its hash (ledger lines): ' + ', '.join(map(str, result.corrupt_shown))
+        )
+    lines.append('OK: every try cites a view the agent was shown.' if result.ok else 'FAILED')
+    return '\n'.join(lines)

@@ -1,6 +1,9 @@
 """Benchmark freeze, normalization, cascade, and gate with a scripted FakeAgent."""
 
+import json
 from pathlib import Path
+
+import pytest
 
 from automative import bench, evolution
 from automative.bench import CallableDriver, GateParams, TaskSpec, normalized_score, split_for
@@ -181,3 +184,32 @@ def test_evolve_rejects_failed_candidate(tmp_path: Path, home: Path) -> None:
     result = evolve_io.benchmark(proposal.version, driver, seeds=1, params=GateParams(min_tasks=6, min_heldout=3))
     assert not result.gate.passed
     assert resolve_version(proposal.version).manifest.status == 'rejected'
+
+
+def test_dsh_driver_invokes_headless_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+
+    from automative.bench import DshHeadlessDriver
+
+    fake_bin = tmp_path / 'bin'
+    fake_bin.mkdir()
+    log = tmp_path / 'argv.json'
+    script = fake_bin / 'dsh'
+    script.write_text(
+        "#!/bin/sh\npython3 -c \"import json,sys,os; json.dump({'argv': sys.argv[1:], 'cwd': os.getcwd(), "
+        f"'root': os.environ.get('AUTOMATIVE_PLUGIN_ROOT')}}, open('{log}', 'w'))\" \"$@\"\n"
+    )
+    os.chmod(script, 0o755)
+    monkeypatch.setenv('PATH', f'{fake_bin}{os.pathsep}{os.environ["PATH"]}')
+    worktree = tmp_path / 'wt'
+    worktree.mkdir()
+    DshHeadlessDriver(plugin_root=tmp_path / 'plugin').drive(worktree, _task('t1'), '1.0.0', 1)
+    seen = json.loads(log.read_text())
+    assert seen['argv'][:4] == [
+        '--profile',
+        'headless',
+        '--patch',
+        str(tmp_path / 'plugin/integrations/dsh/cordis.patch.yml'),
+    ]
+    assert 'automative session brief' in seen['argv'][-1]
+    assert seen['cwd'] == str(worktree.resolve()) and seen['root'] == str(tmp_path / 'plugin')

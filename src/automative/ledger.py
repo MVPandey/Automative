@@ -1,5 +1,6 @@
 """Append-only JSONL ledger of everything that happened in a run."""
 
+import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from automative.state import Best, Score
 from automative.verify import GuardStatus, VerifyOutcome
 
 __all__ = [
+    'AnyRow',
     'EventRow',
     'GuardRecord',
     'IterationRow',
@@ -22,12 +24,16 @@ __all__ = [
     'RunEndRow',
     'RunStartRow',
     'RunSummary',
+    'ShownRow',
     'VerifyRecord',
     'append',
     'iterations',
+    'last_shown',
     'read',
+    'shown',
     'summarize',
     'tail',
+    'text_sha',
 ]
 
 
@@ -69,6 +75,8 @@ class IterationRow(BaseModel):
     hypothesis: str
     predicted_delta: float | None = None
     strategy_ids: tuple[str, ...] = ()
+    parent_iter: int | None = None
+    context_sha: str = ''
     commit: str
     parent_commit: str
     ref: str
@@ -86,6 +94,27 @@ class IterationRow(BaseModel):
     failure_category: FailureCategory
     denied_tool_calls: int = 0
     wall_clock_s: float
+
+
+class ShownRow(BaseModel):
+    """Text the harness put in front of the agent, so what the model saw can be replayed from the log.
+
+    ``context_sha`` is the view of the run the text was rendered from; a later try must cite the same
+    view. ``text`` is omitted only for surfaces that are pure projections of the ledger (``ledger``,
+    ``report``, ``tree``), where ``args`` plus the log reproduce it.
+    """
+
+    model_config = ConfigDict(frozen=True, extra='forbid')
+
+    type: Literal['shown'] = 'shown'
+    run_id: str
+    ts: datetime
+    surface: str
+    context_sha: str
+    sha256: str
+    chars: int
+    text: str | None = None
+    args: dict[str, Any] = Field(default_factory=dict)
 
 
 class EventRow(BaseModel):
@@ -138,22 +167,28 @@ class RunEndRow(BaseModel):
     wall_clock_s: float
 
 
-Row = Annotated[IterationRow | EventRow | RunStartRow | RunEndRow, Field(discriminator='type')]
-_ROW_ADAPTER: TypeAdapter[IterationRow | EventRow | RunStartRow | RunEndRow] = TypeAdapter(Row)
+AnyRow = IterationRow | EventRow | RunStartRow | RunEndRow | ShownRow
+Row = Annotated[AnyRow, Field(discriminator='type')]
+_ROW_ADAPTER: TypeAdapter[AnyRow] = TypeAdapter(Row)
 
 
-def append(path: Path, row: IterationRow | EventRow | RunStartRow | RunEndRow) -> None:
+def text_sha(text: str) -> str:
+    """Hash of a shown text, as stored on its row."""
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def append(path: Path, row: AnyRow) -> None:
     """Append one row; the ledger is never rewritten."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('a', encoding='utf-8') as handle:
         handle.write(json.dumps(row.model_dump(mode='json'), separators=(',', ':')) + '\n')
 
 
-def read(path: Path) -> tuple[IterationRow | EventRow | RunStartRow | RunEndRow, ...]:
+def read(path: Path) -> tuple[AnyRow, ...]:
     """Parse every row; a malformed line is a hard error because the ledger is evidence."""
     if not path.is_file():
         return ()
-    rows: list[IterationRow | EventRow | RunStartRow | RunEndRow] = []
+    rows: list[AnyRow] = []
     for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), start=1):
         if not line.strip():
             continue
@@ -173,6 +208,17 @@ def tail(path: Path, count: int, run_id: str | None = None) -> tuple[IterationRo
     """Return the last ``count`` iteration rows."""
     rows = iterations(path, run_id)
     return rows[-count:] if count > 0 else ()
+
+
+def shown(path: Path, run_id: str) -> tuple[ShownRow, ...]:
+    """Return every shown row of one run, in order."""
+    return tuple(r for r in read(path) if isinstance(r, ShownRow) and r.run_id == run_id)
+
+
+def last_shown(path: Path, run_id: str) -> ShownRow | None:
+    """Return the most recent shown row of one run."""
+    rows = shown(path, run_id)
+    return rows[-1] if rows else None
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,7 +245,7 @@ class RunSummary:
         return (self.best - self.baseline) / abs(self.baseline) * 100.0
 
 
-def summarize(rows: Sequence[IterationRow | EventRow | RunStartRow | RunEndRow], run_id: str) -> RunSummary:
+def summarize(rows: Sequence[AnyRow], run_id: str) -> RunSummary:
     """Fold ledger rows for ``run_id`` into a :class:`RunSummary`."""
     baseline: float | None = None
     for row in rows:

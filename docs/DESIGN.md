@@ -90,12 +90,43 @@ tasks the search never saw. So:
 - rejected candidates are remembered, and anything close to one is refused before it costs anything;
 - rolling back is one line in `AUTOMATIVE.md`, and happens on its own after an integrity failure.
 
+## Model-visible means logged
+
+The ledger started as a record of decisions. It now also records what the agent was shown. Every
+brief, verdict, refusal, suggestion list, and `verify` result the CLI prints for the agent is appended
+as a `shown` row carrying a hash of the text and a hash of the run state (`view_sha`) it was rendered
+from. Each iteration row stores the `view_sha` the try was made against, and `try` refuses when the
+last thing shown does not match the current state. `automative audit` replays a run and reports any
+try whose view was never shown and any stored text that no longer matches its hash.
+
+The idea comes from DeepSeek Harness, whose session log asserts at runtime that anything reaching
+the model can be rebuilt from the log. Here it closes a specific gap: the agent could previously act
+on a brief that was true three commands ago, and nothing in the record would have said so.
+
+## The attempt tree
+
+Commits on the run branch stay linear, but the ledger now records a logical tree. Each iteration row
+names its `parent_iter`: the best at the time, or the attempt the working tree was restored from with
+`automative checkout N`. `checkout` restores attempt N's in-scope files (0 is the baseline) without
+touching the index, so the next `try` builds on it and the discard path still works. `automative tree`
+draws it. The selection rule is unchanged (a keep must beat the global best), which is what keeps this
+a ratchet rather than a random walk; what the tree adds is the ability to debug a crashed attempt or
+branch from a near miss instead of only ever editing the incumbent. A population or Pareto policy
+would plug into the same seam.
+
+## Runtimes
+
+The Claude Code plugin is the reference surface. `integrations/dsh` carries the same enforcement as a
+native DeepSeek Harness plugin on its typed interception points, and `bench run --driver dsh` runs a
+benchmark cell under `dsh --profile headless`. Scoring one protocol version under two runtimes is the
+cheapest way to find out how much of an observed difference is the harness rather than the protocol.
+
 ## What is left out of v1, on purpose
 
-Population, Pareto, and tree search (the seams are there: the `Policy` protocol, a ref per try,
-`samples[]` in the ledger). LLM judges as a mode (a protected script that prints a number already
-works). Docker sandboxing (seam: `Runner`). A UI (the ledger is JSONL). Any prose only "protocol"
-without a CLI enforcing it.
+Population and Pareto policies (the seams are there: the `Policy` protocol, a ref per try,
+`parent_iter` and `samples[]` in the ledger). LLM judges as a mode (a protected script that prints a
+number already works). Docker sandboxing (seam: `Runner`). A UI (the ledger is JSONL). Any prose only
+"protocol" without a CLI enforcing it.
 
 ## Reading
 

@@ -57,6 +57,11 @@
           "title": "Heartbeat Max Age S",
           "type": "integer"
         },
+        "logged_context": {
+          "default": true,
+          "title": "Logged Context",
+          "type": "boolean"
+        },
         "require_hooks": {
           "default": true,
           "title": "Require Hooks",
@@ -165,6 +170,7 @@
       "$ref": "#/$defs/EnforcementSpec",
       "default": {
         "heartbeat_max_age_s": 120,
+        "logged_context": true,
         "require_hooks": true
       }
     },

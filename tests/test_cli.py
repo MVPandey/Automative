@@ -107,3 +107,27 @@ def test_candidate_lifecycle(in_repo: Path, home: Path) -> None:
     assert runner.invoke(app, ['protocol', 'promote', '1.0.1', '--confirm']).exit_code == 17
     assert runner.invoke(app, ['protocol', 'reject', '1.0.1', '--reason', 'no']).exit_code == 0
     assert '1.0.1 rejected' in runner.invoke(app, ['protocol', 'changelog']).stdout
+
+
+def test_checkout_tree_audit(in_repo: Path, write_data: Callable[[str], None]) -> None:
+    runner.invoke(app, ['run', 'start', '--name', 'cli'])
+    write_data('hello world hello world hello world hello\n')
+    assert runner.invoke(app, ['try', '-m', 'longer', '--hypothesis', 'x']).exit_code == 0
+    checkout = runner.invoke(app, ['checkout', '1'])
+    assert checkout.exit_code == 0 and 'matches i1' in checkout.stdout
+    write_data('hello\n')
+    assert 'from i1' in runner.invoke(app, ['try', '-m', 'fixed', '--hypothesis', 'y']).stdout
+    tree = runner.invoke(app, ['tree'])
+    assert tree.exit_code == 0 and 'i0 baseline' in tree.stdout and '    i2 keep' in tree.stdout
+    audit = runner.invoke(app, ['audit'])
+    assert audit.exit_code == 0 and 'OK' in audit.stdout, audit.output
+    as_json = runner.invoke(app, ['audit', '--json'])
+    assert '"ok": true' in as_json.stdout
+
+
+def test_driver_selection(in_repo: Path) -> None:
+    from automative import bench as bench_io
+    from automative.cli import _driver
+
+    assert isinstance(_driver('dsh', None), bench_io.DshHeadlessDriver)
+    assert isinstance(_driver('claude-p', None), bench_io.ClaudePrintDriver)

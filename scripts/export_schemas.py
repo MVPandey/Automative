@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import TypeAdapter
 
 from automative.bench import TaskSpec
-from automative.ledger import EventRow, IterationRow, RunEndRow, RunStartRow
+from automative.ledger import EventRow, IterationRow, RunEndRow, RunStartRow, ShownRow
 from automative.lock import LockFile
 from automative.spec import Spec
 from automative.state import RunState
@@ -19,8 +19,8 @@ TARGET = Path(__file__).resolve().parents[1] / 'src' / 'automative' / 'schemas'
 
 def schemas() -> dict[str, dict[str, object]]:
     """Return ``{filename: schema}``."""
-    row_adapter: TypeAdapter[IterationRow | EventRow | RunStartRow | RunEndRow] = TypeAdapter(
-        IterationRow | EventRow | RunStartRow | RunEndRow
+    row_adapter: TypeAdapter[IterationRow | EventRow | RunStartRow | RunEndRow | ShownRow] = TypeAdapter(
+        IterationRow | EventRow | RunStartRow | RunEndRow | ShownRow
     )
     return {
         'ledger-row.schema.json': row_adapter.json_schema(),
