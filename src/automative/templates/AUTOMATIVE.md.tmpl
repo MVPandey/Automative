@@ -1,0 +1,39 @@
+---
+automative: 1
+protocol: $protocol
+tags: [$tags]
+metric:
+  name: $metric_name
+  direction: $direction          # lower | higher
+  verify: $verify
+  guard: [$guard]
+  heldout: null
+  timeout_s: $timeout_s
+  repeats: $repeats
+  min_improvement: "$min_improvement"
+  target: null
+scope: [$scope]
+protected: [$protected]
+budget: {iterations: $iterations, minutes: $minutes, plateau_patience: 8, max_consecutive_errors: 3, max_denied_tool_calls: 5}
+enforcement: {require_hooks: $require_hooks}
+---
+# Goal
+
+$goal
+
+## Context
+
+Where the levers are (code, config, prompts, parameters, data), how to run things, and anything the agent has
+to know to move the metric. Plain English.
+
+## Constraints
+
+- Rules the metric cannot see: keep the public API, no new dependencies, stay under N lines.
+
+## Strategy hints
+
+- Ideas or kinds of change worth trying first. Optional.
+
+## Out of scope
+
+- Things not to attempt even though they are inside `scope`.

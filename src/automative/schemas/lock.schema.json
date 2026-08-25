@@ -1,0 +1,35 @@
+{
+  "additionalProperties": false,
+  "description": "Hashes captured at ``run start``.",
+  "properties": {
+    "protected": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Protected",
+      "type": "object"
+    },
+    "protocol_manifest_sha": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Protocol Manifest Sha"
+    },
+    "spec_sha": {
+      "title": "Spec Sha",
+      "type": "string"
+    }
+  },
+  "required": [
+    "protected",
+    "spec_sha"
+  ],
+  "title": "LockFile",
+  "type": "object"
+}

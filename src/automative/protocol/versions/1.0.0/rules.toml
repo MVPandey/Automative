@@ -1,0 +1,15 @@
+# Protocol-owned tunables the CLI reads. Each value must stay inside the range declared in
+# schemas/rules.schema.json; budgets, verify commands, and scope are NOT here (they are human-owned).
+
+[ideation]
+top_k_strategies = 5
+radical_after_discards = 5
+exploit_after_keep = true
+
+[decide]
+rework_attempts_on_guard_fail = 2
+crash_fix_attempts = 2
+confirm_on_keep_when_noisy = true
+
+[review]
+ledger_tail = 10

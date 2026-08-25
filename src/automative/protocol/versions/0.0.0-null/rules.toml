@@ -1,0 +1,12 @@
+[ideation]
+top_k_strategies = 0
+radical_after_discards = 5
+exploit_after_keep = false
+
+[decide]
+rework_attempts_on_guard_fail = 0
+crash_fix_attempts = 0
+confirm_on_keep_when_noisy = false
+
+[review]
+ledger_tail = 5

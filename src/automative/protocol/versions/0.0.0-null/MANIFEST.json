@@ -1,0 +1,15 @@
+{
+  "version": "0.0.0-null",
+  "parent": null,
+  "created_at": "2026-08-25T00:00:00+00:00",
+  "created_by": "human",
+  "files": {
+    "SKILL.md": "e65d179c1cc06defe9c181c2a2551b24aee93f09e6e8a60f041a6c85a7c2a538",
+    "rules.toml": "6bfb98dc1f0140f8617ef0289bbc8bfc2efd47c8ee09194282a0f9efeec554f7"
+  },
+  "ops": [],
+  "rationale": "Bare modify, verify, keep loop; the control arm for the benchmark gate.",
+  "strategy_ids": [],
+  "evidence": {},
+  "status": "promoted"
+}

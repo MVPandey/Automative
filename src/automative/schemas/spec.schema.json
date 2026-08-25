@@ -1,0 +1,209 @@
+{
+  "$defs": {
+    "BudgetSpec": {
+      "additionalProperties": false,
+      "description": "Stop conditions. ``iterations=0`` or ``minutes=0`` means unbounded on that axis.",
+      "properties": {
+        "iterations": {
+          "default": 30,
+          "minimum": 0,
+          "title": "Iterations",
+          "type": "integer"
+        },
+        "max_consecutive_errors": {
+          "default": 3,
+          "minimum": 1,
+          "title": "Max Consecutive Errors",
+          "type": "integer"
+        },
+        "max_denied_tool_calls": {
+          "default": 5,
+          "minimum": 1,
+          "title": "Max Denied Tool Calls",
+          "type": "integer"
+        },
+        "minutes": {
+          "default": 120,
+          "minimum": 0,
+          "title": "Minutes",
+          "type": "integer"
+        },
+        "plateau_patience": {
+          "default": 8,
+          "minimum": 0,
+          "title": "Plateau Patience",
+          "type": "integer"
+        }
+      },
+      "title": "BudgetSpec",
+      "type": "object"
+    },
+    "Direction": {
+      "description": "Which way the metric should move.",
+      "enum": [
+        "lower",
+        "higher"
+      ],
+      "title": "Direction",
+      "type": "string"
+    },
+    "EnforcementSpec": {
+      "additionalProperties": false,
+      "description": "Which deterministic controls are required for this project.",
+      "properties": {
+        "heartbeat_max_age_s": {
+          "default": 120,
+          "minimum": 10,
+          "title": "Heartbeat Max Age S",
+          "type": "integer"
+        },
+        "require_hooks": {
+          "default": true,
+          "title": "Require Hooks",
+          "type": "boolean"
+        }
+      },
+      "title": "EnforcementSpec",
+      "type": "object"
+    },
+    "MetricSpec": {
+      "additionalProperties": false,
+      "description": "How the target is measured.",
+      "properties": {
+        "direction": {
+          "$ref": "#/$defs/Direction",
+          "default": "lower"
+        },
+        "guard": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Guard",
+          "type": "array"
+        },
+        "heldout": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout"
+        },
+        "min_improvement": {
+          "default": "0",
+          "title": "Min Improvement",
+          "type": "string"
+        },
+        "name": {
+          "default": "score",
+          "title": "Name",
+          "type": "string"
+        },
+        "repeats": {
+          "default": 1,
+          "maximum": 9,
+          "minimum": 1,
+          "title": "Repeats",
+          "type": "integer"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        },
+        "timeout_s": {
+          "default": 600,
+          "minimum": 1,
+          "title": "Timeout S",
+          "type": "integer"
+        },
+        "verify": {
+          "title": "Verify",
+          "type": "string"
+        }
+      },
+      "required": [
+        "verify"
+      ],
+      "title": "MetricSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Validated front matter of ``AUTOMATIVE.md``.",
+  "properties": {
+    "automative": {
+      "default": 1,
+      "maximum": 1,
+      "minimum": 1,
+      "title": "Automative",
+      "type": "integer"
+    },
+    "budget": {
+      "$ref": "#/$defs/BudgetSpec",
+      "default": {
+        "iterations": 30,
+        "max_consecutive_errors": 3,
+        "max_denied_tool_calls": 5,
+        "minutes": 120,
+        "plateau_patience": 8
+      }
+    },
+    "enforcement": {
+      "$ref": "#/$defs/EnforcementSpec",
+      "default": {
+        "heartbeat_max_age_s": 120,
+        "require_hooks": true
+      }
+    },
+    "metric": {
+      "$ref": "#/$defs/MetricSpec"
+    },
+    "protected": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Protected",
+      "type": "array"
+    },
+    "protocol": {
+      "default": "1.0.0",
+      "title": "Protocol",
+      "type": "string"
+    },
+    "scope": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Scope",
+      "type": "array"
+    },
+    "tags": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    }
+  },
+  "required": [
+    "metric",
+    "scope"
+  ],
+  "title": "Spec",
+  "type": "object"
+}

@@ -1,0 +1,26 @@
+{
+  "name": "automative",
+  "version": "0.1.0",
+  "description": "Improvement loop for anything a command can score (code, ML configs, prompts, trading strategies, drafts): modify, verify, keep or discard, learn.",
+  "author": {
+    "name": "Manav Pandey",
+    "url": "https://github.com/MVPandey"
+  },
+  "license": "MIT",
+  "keywords": [
+    "harness",
+    "autoresearch",
+    "iteration",
+    "self-improvement",
+    "optimization"
+  ],
+  "commands": [
+    "./commands/automative.md",
+    "./commands/automative/init.md",
+    "./commands/automative/evolve.md",
+    "./commands/automative/report.md"
+  ],
+  "agents": [
+    "./agents/reflector.md"
+  ]
+}

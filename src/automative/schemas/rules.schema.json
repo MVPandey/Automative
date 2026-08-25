@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Automative protocol rules",
+  "description": "Protocol-owned tunables. Every numeric value carries a hard range that L2 candidates cannot exceed.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "ideation": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "top_k_strategies": {"type": "integer", "minimum": 0, "maximum": 10},
+        "radical_after_discards": {"type": "integer", "minimum": 2, "maximum": 15},
+        "exploit_after_keep": {"type": "boolean"}
+      }
+    },
+    "decide": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "rework_attempts_on_guard_fail": {"type": "integer", "minimum": 0, "maximum": 3},
+        "crash_fix_attempts": {"type": "integer", "minimum": 0, "maximum": 3},
+        "confirm_on_keep_when_noisy": {"type": "boolean"}
+      }
+    },
+    "review": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "ledger_tail": {"type": "integer", "minimum": 5, "maximum": 40}
+      }
+    }
+  }
+}

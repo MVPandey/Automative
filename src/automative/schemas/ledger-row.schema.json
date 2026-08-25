@@ -1,0 +1,609 @@
+{
+  "$defs": {
+    "Best": {
+      "description": "The incumbent best result.",
+      "properties": {
+        "commit": {
+          "title": "Commit",
+          "type": "string"
+        },
+        "iter": {
+          "title": "Iter",
+          "type": "integer"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "score",
+        "iter",
+        "commit"
+      ],
+      "title": "Best",
+      "type": "object"
+    },
+    "EventRow": {
+      "additionalProperties": false,
+      "description": "Anything notable that is not a try: refusals, integrity events, pauses, denials, learnings.",
+      "properties": {
+        "data": {
+          "additionalProperties": true,
+          "title": "Data",
+          "type": "object"
+        },
+        "detail": {
+          "default": "",
+          "title": "Detail",
+          "type": "string"
+        },
+        "event": {
+          "title": "Event",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "event",
+          "default": "event",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "ts",
+        "event"
+      ],
+      "title": "EventRow",
+      "type": "object"
+    },
+    "FailureCategory": {
+      "description": "Why a try did not become a keep (Harness-Bench-style taxonomy plus harness-specific causes).",
+      "enum": [
+        "none",
+        "worse",
+        "below_min",
+        "guard",
+        "heldout",
+        "crash",
+        "timeout",
+        "metric_parse",
+        "scope",
+        "integrity",
+        "contract_format",
+        "tool_recovery",
+        "state_continuation"
+      ],
+      "title": "FailureCategory",
+      "type": "string"
+    },
+    "GuardRecord": {
+      "description": "What the guard commands produced.",
+      "properties": {
+        "failed_cmd": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failed Cmd"
+        },
+        "status": {
+          "$ref": "#/$defs/GuardStatus"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "GuardRecord",
+      "type": "object"
+    },
+    "GuardStatus": {
+      "description": "Aggregate result of the guard commands.",
+      "enum": [
+        "pass",
+        "fail",
+        "none"
+      ],
+      "title": "GuardStatus",
+      "type": "string"
+    },
+    "IterationRow": {
+      "additionalProperties": false,
+      "description": "One ``try``.",
+      "properties": {
+        "best_before": {
+          "title": "Best Before",
+          "type": "number"
+        },
+        "change": {
+          "title": "Change",
+          "type": "string"
+        },
+        "commit": {
+          "title": "Commit",
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "decision_reason": {
+          "title": "Decision Reason",
+          "type": "string"
+        },
+        "delta_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Delta Pct"
+        },
+        "denied_tool_calls": {
+          "default": 0,
+          "title": "Denied Tool Calls",
+          "type": "integer"
+        },
+        "failure_category": {
+          "$ref": "#/$defs/FailureCategory"
+        },
+        "files_changed": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Files Changed",
+          "type": "array"
+        },
+        "guard": {
+          "$ref": "#/$defs/GuardRecord"
+        },
+        "heldout_score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout Score"
+        },
+        "hypothesis": {
+          "title": "Hypothesis",
+          "type": "string"
+        },
+        "iter": {
+          "title": "Iter",
+          "type": "integer"
+        },
+        "mode": {
+          "title": "Mode",
+          "type": "string"
+        },
+        "observed_delta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Delta"
+        },
+        "parent_commit": {
+          "title": "Parent Commit",
+          "type": "string"
+        },
+        "predicted_delta": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Predicted Delta"
+        },
+        "prediction_error_pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prediction Error Pct"
+        },
+        "protocol_version": {
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        },
+        "revert_commit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Revert Commit"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "strategy_ids": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Strategy Ids",
+          "type": "array"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "iteration",
+          "default": "iteration",
+          "title": "Type",
+          "type": "string"
+        },
+        "verify": {
+          "$ref": "#/$defs/VerifyRecord"
+        },
+        "wall_clock_s": {
+          "title": "Wall Clock S",
+          "type": "number"
+        }
+      },
+      "required": [
+        "run_id",
+        "iter",
+        "ts",
+        "protocol_version",
+        "mode",
+        "change",
+        "hypothesis",
+        "commit",
+        "parent_commit",
+        "ref",
+        "verify",
+        "guard",
+        "best_before",
+        "decision",
+        "decision_reason",
+        "failure_category",
+        "wall_clock_s"
+      ],
+      "title": "IterationRow",
+      "type": "object"
+    },
+    "Outcome": {
+      "description": "Final status of one try, as recorded in the ledger.",
+      "enum": [
+        "keep",
+        "discard",
+        "guard_fail",
+        "crash",
+        "timeout",
+        "metric_error",
+        "no_op",
+        "abandoned",
+        "tamper"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "RunEndRow": {
+      "additionalProperties": false,
+      "description": "Recorded when a run stops for any reason.",
+      "properties": {
+        "best": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Best"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "escalated": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Escalated"
+        },
+        "iterations": {
+          "title": "Iterations",
+          "type": "integer"
+        },
+        "keeps": {
+          "title": "Keeps",
+          "type": "integer"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "stop_reason": {
+          "title": "Stop Reason",
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "run_end",
+          "default": "run_end",
+          "title": "Type",
+          "type": "string"
+        },
+        "wall_clock_s": {
+          "title": "Wall Clock S",
+          "type": "number"
+        }
+      },
+      "required": [
+        "run_id",
+        "ts",
+        "stop_reason",
+        "iterations",
+        "keeps",
+        "wall_clock_s"
+      ],
+      "title": "RunEndRow",
+      "type": "object"
+    },
+    "RunStartRow": {
+      "additionalProperties": false,
+      "description": "Recorded once per run with every hash the run depends on.",
+      "properties": {
+        "base_branch": {
+          "title": "Base Branch",
+          "type": "string"
+        },
+        "baseline": {
+          "$ref": "#/$defs/Score"
+        },
+        "baseline_commit": {
+          "title": "Baseline Commit",
+          "type": "string"
+        },
+        "branch": {
+          "title": "Branch",
+          "type": "string"
+        },
+        "budget": {
+          "additionalProperties": true,
+          "title": "Budget",
+          "type": "object"
+        },
+        "disclosure": {
+          "additionalProperties": true,
+          "title": "Disclosure",
+          "type": "object"
+        },
+        "metric": {
+          "additionalProperties": true,
+          "title": "Metric",
+          "type": "object"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "protected": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Protected",
+          "type": "object"
+        },
+        "protocol_version": {
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "spec_sha": {
+          "title": "Spec Sha",
+          "type": "string"
+        },
+        "ts": {
+          "format": "date-time",
+          "title": "Ts",
+          "type": "string"
+        },
+        "type": {
+          "const": "run_start",
+          "default": "run_start",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "ts",
+        "protocol_version",
+        "branch",
+        "base_branch",
+        "baseline_commit",
+        "baseline",
+        "spec_sha",
+        "protected",
+        "metric",
+        "budget"
+      ],
+      "title": "RunStartRow",
+      "type": "object"
+    },
+    "Score": {
+      "description": "A measured score and the raw samples that produced it.",
+      "properties": {
+        "samples": {
+          "default": [],
+          "items": {
+            "type": "number"
+          },
+          "title": "Samples",
+          "type": "array"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        }
+      },
+      "required": [
+        "score"
+      ],
+      "title": "Score",
+      "type": "object"
+    },
+    "VerifyOutcome": {
+      "description": "How a verify invocation ended.",
+      "enum": [
+        "ok",
+        "crash",
+        "timeout",
+        "metric_error"
+      ],
+      "title": "VerifyOutcome",
+      "type": "string"
+    },
+    "VerifyRecord": {
+      "description": "What the verify subprocess produced.",
+      "properties": {
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Exit Code"
+        },
+        "integrity": {
+          "default": "ok",
+          "title": "Integrity",
+          "type": "string"
+        },
+        "log": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Log"
+        },
+        "outcome": {
+          "$ref": "#/$defs/VerifyOutcome"
+        },
+        "runtime_s": {
+          "title": "Runtime S",
+          "type": "number"
+        },
+        "samples": {
+          "default": [],
+          "items": {
+            "type": "number"
+          },
+          "title": "Samples",
+          "type": "array"
+        },
+        "score": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Score"
+        }
+      },
+      "required": [
+        "outcome",
+        "score",
+        "runtime_s",
+        "exit_code"
+      ],
+      "title": "VerifyRecord",
+      "type": "object"
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/IterationRow"
+    },
+    {
+      "$ref": "#/$defs/EventRow"
+    },
+    {
+      "$ref": "#/$defs/RunStartRow"
+    },
+    {
+      "$ref": "#/$defs/RunEndRow"
+    }
+  ]
+}
