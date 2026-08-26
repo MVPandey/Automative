@@ -1,0 +1,35 @@
+{
+  "fetched_at": "2026-08-26T06:00:00+00:00",
+  "granularity_s": 3600,
+  "train_end": "2026-07-21T06:00:00+00:00",
+  "coins": {
+    "DOGE": {
+      "train_rows": 2011,
+      "heldout_rows": 865
+    },
+    "SHIB": {
+      "train_rows": 2011,
+      "heldout_rows": 865
+    },
+    "PEPE": {
+      "train_rows": 2010,
+      "heldout_rows": 865
+    },
+    "BONK": {
+      "train_rows": 2011,
+      "heldout_rows": 865
+    },
+    "WIF": {
+      "train_rows": 1992,
+      "heldout_rows": 830
+    },
+    "DEGEN": {
+      "train_rows": 1965,
+      "heldout_rows": 838
+    },
+    "TOSHI": {
+      "train_rows": 2011,
+      "heldout_rows": 865
+    }
+  }
+}
