@@ -1,0 +1,8 @@
+__pycache__/
+.pytest_cache/
+.automative/state.json
+.automative/lock.json
+.automative/heartbeat
+.automative/budget.json
+.automative/.cli.lock
+.automative/runs/

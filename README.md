@@ -166,6 +166,7 @@ skills/ commands/ agents/ hooks/   the Claude Code plugin: thin loader plus enfo
 integrations/dsh/                  the same enforcement as a native DeepSeek Harness plugin
 examples/sortbench/                demo target
 examples/algotune/                 six AlgoTune tasks rehosted with dependency-free references
+examples/memecoin/                 hourly memecoin strategy against a fee-aware backtest with a held-out window
 scripts/build_bench.sh             runs every example once and freezes it into the benchmark suite
 docs/DESIGN.md                     why it is built this way
 ```
