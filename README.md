@@ -35,7 +35,8 @@ or into the plain prose constraints the agent rereads every iteration.
 5. What the agent learns goes into a strategy catalogue. The protocol the agent follows is versioned;
    it only changes after a benchmark shows the new version does better, and one line pins it back.
 
-`docs/DESIGN.md` explains the reasoning and the research behind it. `examples/` has tasks you can run.
+`docs/DESIGN.md` explains the reasoning and the research behind it. `examples/` has tasks you can run,
+and `docs/BENCHMARKS.md` lists public task sets that fit the contract.
 
 ## Install
 
@@ -53,30 +54,68 @@ Other agents (Codex, OpenHands) load the same skill from `.agents/skills/automat
 `enforcement.require_hooks: false` in `AUTOMATIVE.md` for them, since they have no hook heartbeat.
 The CLI still checks scope and protected file hashes on every `try`.
 
-## A ten minute demo
+## A ten minute demo, start to finish
+
+`examples/sortbench` has a deliberately slow `dedupe_and_sort()`: a hand written insertion sort over
+a list that is deduplicated with `x in seen` on a list. `bench.py` times it on 4,000 seeded integers
+and prints the median in milliseconds. Tests pin the behaviour. The contract says: change only
+`src/slowsort/**/*.py`, never `bench.py` or `tests/`, stop after 8 tries or 10 minutes or 4 tries
+without a new best.
 
 ```sh
-scripts/demo.sh            # copies examples/sortbench to a temp dir, inits git, starts a run
-cd <printed dir> && claude # then type /automative and watch the ledger fill up
-automative ledger; automative report
+scripts/demo.sh            # copies the example to a temp dir, inits git, runs doctor, starts the run
+cd <printed dir> && claude # type /automative, or drive it headless as below
 ```
 
-Here is what a headless run of that demo actually did (`claude -p`, Claude Code 2.1, 28 turns,
-3.3 minutes, $2.15):
+This is the run behind the numbers below, driven headless so nothing was typed by hand:
+
+```sh
+claude -p 'Run `automative session brief`, read the pinned protocol file it names, and follow it
+until the harness says the run is done. Then run `automative run end`.' \
+  --plugin-dir /path/to/Automative --permission-mode bypassPermissions --max-turns 80
+```
+
+`run start` measured the baseline (8.648 ms), created the branch, and hashed `bench.py`, the tests,
+and the contract. The agent read the brief, made one change, and called `try`. Seven times:
 
 ```
 iter  decision   score    delta    change
-1     keep       4.958    -4.179   Replace hand-rolled insertion sort with built-in sorted()
-2     keep       0.089    -4.869   Replace O(n*k) list membership dedupe with dict.fromkeys()
-3     keep       0.035    -0.054   Use set() instead of dict.fromkeys() for dedupe
-4     discard    0.038    +0.003   Bind set/sorted builtins as default args to skip LOAD_GLOBAL
-5     keep       0.034    -0.001   Build list from set then sort in place instead of sorted()
-6-8   discard    ...               small variants, all reverted
-Baseline 9.137 -> best 0.034 (-99.6%), keep rate 50%, prediction error 9.4%, 2 strategies learned
+1     keep       4.707    -3.941   Replace the hand-written insertion sort with sorted()
+2     keep       0.091    -4.616   Track seen values in a set instead of testing list membership
+3     keep       0.034    -0.057   Build the set in C with set(values) and sort it directly
+4     discard    0.034     0       Sort the list in place instead of calling sorted() on the set
+5     discard    0.034     0       Build the set with a set display {*values} instead of calling set()
+6     discard    0.035    +0.001   Use frozenset(values) instead of set(values)
+7     discard    0.035    +0.001   Build an empty set and update() it from values instead of set(values)
 ```
 
-Each discard is a revert pair in `git log` and each keep is a commit. The guard tests passed on
-every try. The agent tried to touch `bench.py` and the tests; the hook said no.
+After i7 the harness stopped the run itself: four tries without a new best is the plateau limit in
+the contract. Claude Code 2.1, 20 turns, 3.4 minutes, $2.08. What the record shows afterwards:
+
+```
+$ automative report
+Run r-20260826-0012-sortbench: 7 tries, 3 kept, 4 discarded, 0 errors, keep rate 43%
+Baseline 8.648 to best 0.034 (-99.6%) at i3
+Prediction calibration: mean |error| 4.4% of incumbent
+
+$ automative audit
+Run r-20260826-0012-sortbench: 17 shown rows, 7 tries
+Surfaces: brief x1, hook:deny x1, hook:prompt-submit x1, hook:session-start x1, ledger x2, ...
+OK: every try cites a view the agent was shown.
+
+$ git log --oneline | head -4
+9b1e67e automative(end): r-20260826-0012-sortbench
+bc9fe23 Revert "automative(i7): Build an empty set and update() it from values instead of set(values)"
+ed6bc5e automative(i7): Build an empty set and update() it from values instead of set(values)
+a6b783c Revert "automative(i6): Use frozenset(values) instead of set(values)"
+```
+
+Each discard is a commit and its revert, so every attempt is still inspectable. The agent predicted
+each delta before measuring and was within 4.4% on average. It recorded two strategies in the
+catalogue on the way. The one `hook:deny` was the hook refusing a shell write into `.automative/`,
+which the agent reported at the end instead of working around. (It was right to complain: the path
+was its own notes file, and that refusal was a bug, fixed since.) The best commit is on the run
+branch; `git merge automative/20260826-0012-sortbench` lands it.
 
 ## The contract: `AUTOMATIVE.md`
 

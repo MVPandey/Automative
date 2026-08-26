@@ -49,6 +49,15 @@ def test_notes_allowed(started: RunLoop) -> None:
     assert not _denied(_pre(started, 'Write', file_path=f'.automative/runs/{run_id}/notes.md'))
 
 
+def test_shell_write_to_notes_allowed(started: RunLoop) -> None:
+    run_id = started.require_state().run_id
+    cmd = f"mkdir -p .automative/runs/{run_id} && cat > .automative/runs/{run_id}/notes.md <<'EOF'\nhi\nEOF"
+    assert not _denied(_pre(started, 'Bash', command=cmd))
+    assert not _denied(_pre(started, 'Bash', command=f'echo x >> ./.automative/runs/{run_id}/notes.md'))
+    assert _denied(_pre(started, 'Bash', command='echo x >> .automative/ledger.jsonl'))
+    assert _denied(_pre(started, 'Bash', command=f'cp notes.md .automative/runs/{run_id}/state.json'))
+
+
 def test_edit_harness_state_denied(started: RunLoop) -> None:
     assert _denied(_pre(started, 'Write', file_path='.automative/ledger.jsonl'))
 

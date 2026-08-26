@@ -40,6 +40,7 @@ HOOK_KILL_RE = re.compile(
 REDIRECT_RE = re.compile(r'(?:(?<![\d&>])>{1,2}|&>)\s*["\']?([^\s"\'|;&]+)')
 WRITE_TOOLS = frozenset({'tee', 'mv', 'cp', 'rm', 'patch', 'truncate', 'chmod', 'ln', 'install', 'rsync', 'dd'})
 SEGMENT_SPLIT_RE = re.compile(r'\|\||&&|;|\|')
+NOTES_RE = re.compile(r'^\.automative/runs/[^/]+/notes\.md$')
 SETTINGS_RE = re.compile(
     r'(^|/)\.claude/settings[^/]*\.json$|(^|/)hooks\.json$|(^|/)\.git/(hooks|config)(/|$)|(^|/)\.claude/(hooks|plugins)(/|$)'
 )
@@ -137,7 +138,9 @@ def _touches(target: str, protected: tuple[str, ...], root: Path) -> bool:
     clean = target.strip()
     while clean.startswith('./'):
         clean = clean[2:]
-    if clean.startswith(f'{DOTDIR}/') or (clean == DOTDIR and not clean.endswith('notes.md')):
+    if NOTES_RE.match(clean):
+        return False  # the agent's scratchpad is the one harness path it may write
+    if clean == DOTDIR or clean.startswith(f'{DOTDIR}/'):
         return True
     if any(clean == p or clean.endswith('/' + p) for p in protected):
         return True
