@@ -1,17 +1,19 @@
 #!/bin/sh
-# Copy examples/sortbench to a scratch directory, initialise git, start an Automative run, and print the
-# next step. Usage: scripts/demo.sh [target-dir]
+# Copy an example to a scratch directory, initialise git, start an Automative run, and print the next
+# step. Usage: scripts/demo.sh [example-dir] [target-dir]   (default example: examples/sortbench)
 set -eu
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-TARGET="${1:-$(mktemp -d -t automative-demo)}"
+EXAMPLE="${1:-$HERE/examples/sortbench}"
+TARGET="${2:-$(mktemp -d -t automative-demo)}"
+NAME="$(basename "$EXAMPLE")"
 mkdir -p "$TARGET"
-cp -R "$HERE/examples/sortbench/." "$TARGET/"
+cp -R "$EXAMPLE/." "$TARGET/"
 cd "$TARGET"
 git init -q -b main
 git add -A
-git -c user.email=demo@automative.local -c user.name=automative-demo commit -qm "sortbench demo baseline"
+git -c user.email=demo@automative.local -c user.name=automative-demo commit -qm "$NAME demo baseline"
 automative doctor
-automative run start --name sortbench
+automative run start --name "$NAME"
 echo
 echo "Demo ready in $TARGET"
 echo "Next: cd \"$TARGET\" && claude   # then type /automative"

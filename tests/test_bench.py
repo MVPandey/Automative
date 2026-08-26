@@ -213,3 +213,16 @@ def test_dsh_driver_invokes_headless_profile(tmp_path: Path, monkeypatch: pytest
     ]
     assert 'automative session brief' in seen['argv'][-1]
     assert seen['cwd'] == str(worktree.resolve()) and seen['root'] == str(tmp_path / 'plugin')
+
+
+def test_freeze_split_override(tmp_path: Path, home: Path) -> None:
+    root = make_repo(tmp_path / 'repo', iterations=2)
+    loop = RunLoop(Project.load(root))
+    loop.start('split')
+    (root / 'src' / 'data.txt').write_text('hello\n')
+    loop.try_change('shorter', 'fewer bytes')
+    loop.end()
+    task = bench.freeze(loop.project, loop.require_state().run_id, split='heldout')
+    assert task.split == 'heldout'
+    with pytest.raises(bench.BenchError):
+        bench.freeze(loop.project, loop.require_state().run_id, split='sideways')

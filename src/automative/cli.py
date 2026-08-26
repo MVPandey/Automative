@@ -765,6 +765,9 @@ def bench_freeze(
     requirement: Annotated[
         list[str] | None, typer.Option('--requirement', help='e.g. 8xH100 (marks expensive).')
     ] = None,
+    split: Annotated[
+        str | None, typer.Option('--split', help='train | heldout; overrides the hash-based assignment.')
+    ] = None,
 ) -> None:
     """Freeze a finished run into a benchmark task."""
     from automative import bench as bench_io  # noqa: PLC0415
@@ -775,7 +778,7 @@ def bench_freeze(
         run_id = run or (state.run_id if state else None)
         if run_id is None:
             raise AutomativeError('No run to freeze')
-        task = bench_io.freeze(loop.project, run_id, requirements=tuple(requirement or ()))
+        task = bench_io.freeze(loop.project, run_id, requirements=tuple(requirement or ()), split=split)
     except AutomativeError as exc:
         _fail(exc)
         return

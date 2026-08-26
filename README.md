@@ -67,6 +67,9 @@ scripts/demo.sh            # copies the example to a temp dir, inits git, runs d
 cd <printed dir> && claude # type /automative, or drive it headless as below
 ```
 
+(`scripts/demo.sh examples/algotune/pagerank` does the same for any of the six AlgoTune tasks in
+`examples/algotune/`.)
+
 This is the run behind the numbers below, driven headless so nothing was typed by hand:
 
 ```sh
@@ -162,5 +165,7 @@ src/automative/protocol/versions/  bundled, checksummed protocol versions (0.0.0
 skills/ commands/ agents/ hooks/   the Claude Code plugin: thin loader plus enforcement hooks
 integrations/dsh/                  the same enforcement as a native DeepSeek Harness plugin
 examples/sortbench/                demo target
+examples/algotune/                 six AlgoTune tasks rehosted with dependency-free references
+scripts/build_bench.sh             runs every example once and freezes it into the benchmark suite
 docs/DESIGN.md                     why it is built this way
 ```

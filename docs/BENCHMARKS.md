@@ -14,6 +14,10 @@ number, and a check the number cannot fool. These public task sets have all thre
 | [MLE-bench](https://github.com/openai/mle-bench) (Lite) | 22 Kaggle competitions | the solution directory | the competition metric on a held out split | leaderboard grader | CPU or GPU, hours |
 | [GEPA / DSPy tasks](https://github.com/gepa-ai/gepa) | HotpotQA, HoVer, IFBench, PUPA | a prompt file | pass rate on a train split | `heldout`: pass rate on a validation split | LLM calls per verify |
 
+Six AlgoTune tasks ship in `examples/algotune/` with dependency-free reference solvers, and
+`scripts/build_bench.sh` runs each once and freezes it, which with `sortbench` is the seven-task suite
+(three held out) the gate needs.
+
 AlgoTune is the best first target: it is the same shape as `examples/sortbench` 154 times over, it
 runs on a laptop, correctness is checked by the task itself, and the reference-relative speedup is
 already the number the leaderboard reports. Freezing a dozen of its tasks with `bench freeze` gives

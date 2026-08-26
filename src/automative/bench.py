@@ -179,8 +179,14 @@ def _cost_class(runtime_s: float, requirements: tuple[str, ...]) -> str:
     return 'medium' if runtime_s < 600 else 'expensive'
 
 
-def freeze(project: Project, run_id: str, *, requirements: tuple[str, ...] = ()) -> TaskSpec:
-    """Freeze a finished run into a benchmark task."""
+def freeze(project: Project, run_id: str, *, requirements: tuple[str, ...] = (), split: str | None = None) -> TaskSpec:
+    """Freeze a finished run into a benchmark task.
+
+    ``split`` overrides the hash-based held-out assignment. Use it only when assembling a suite by hand;
+    the assignment is still written once and never changed afterwards.
+    """
+    if split not in (None, 'train', 'heldout'):
+        raise BenchError(f'split must be train or heldout, got {split!r}')
     rows = ledger_io.read(project.paths.ledger_file)
     start = next((r for r in rows if isinstance(r, ledger_io.RunStartRow) and r.run_id == run_id), None)
     if start is None:
@@ -219,7 +225,7 @@ def freeze(project: Project, run_id: str, *, requirements: tuple[str, ...] = ())
         noise_floor=noise,
         cost_class=_cost_class(statistics.median(runtimes), requirements),
         requirements=requirements,
-        split=split_for(task_id),
+        split=split or split_for(task_id),
     )
     (target / 'task.json').write_text(task.model_dump_json(indent=2), encoding='utf-8')
     shutil.copy(project.paths.spec_file, target / 'AUTOMATIVE.md')
