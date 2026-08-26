@@ -11,6 +11,7 @@ asked for.
 import argparse
 import csv
 import json
+import ssl
 import sys
 import time
 import urllib.request
@@ -23,14 +24,28 @@ GRANULARITY = 3600
 PAGE = 300  # candles per request, Coinbase's maximum
 
 
-def fetch(coin: str, start: datetime, end: datetime) -> list[list[float]]:
+def tls_context() -> ssl.SSLContext:
+    """A context that verifies certificates even on python.org builds that ship without root CAs."""
+    try:
+        import certifi  # noqa: PLC0415 - optional
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+    system_bundle = Path("/etc/ssl/cert.pem")
+    if system_bundle.is_file():
+        return ssl.create_default_context(cafile=str(system_bundle))
+    return ssl.create_default_context()
+
+
+def fetch(coin: str, start: datetime, end: datetime, context: ssl.SSLContext) -> list[list[float]]:
     rows: dict[int, list[float]] = {}
     cursor = start
     while cursor < end:
         page_end = min(cursor + timedelta(seconds=GRANULARITY * PAGE), end)
         url = f"{API.format(coin=coin)}?granularity={GRANULARITY}&start={cursor.isoformat()}&end={page_end.isoformat()}"
         req = urllib.request.Request(url, headers={"User-Agent": "automative-memecoin-example"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=30, context=context) as resp:
             for t, low, high, open_, close, volume in json.load(resp):
                 rows[int(t)] = [float(open_), float(high), float(low), float(close), float(volume)]
         cursor = page_end
@@ -54,9 +69,10 @@ def main() -> int:
     end = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     start = end - timedelta(days=args.days)
     cut = end - timedelta(days=args.heldout_days)
+    context = tls_context()
     manifest = {"fetched_at": end.isoformat(), "granularity_s": GRANULARITY, "train_end": cut.isoformat(), "coins": {}}
     for coin in COINS:
-        rows = fetch(coin, start, end)
+        rows = fetch(coin, start, end, context)
         train = [r for r in rows if r[0] < cut.timestamp()]
         held = [r for r in rows if r[0] >= cut.timestamp()]
         write(Path("data/train") / f"{coin}.csv", train)
