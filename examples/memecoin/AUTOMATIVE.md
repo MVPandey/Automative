@@ -14,6 +14,7 @@ metric:
   target: null
 scope: [strategy.py]
 protected: [backtest.py, check.py, fetch_data.py, data/**]
+sealed: [data/heldout/**]
 budget: {iterations: 12, minutes: 30, plateau_patience: 5, max_consecutive_errors: 3, max_denied_tool_calls: 5}
 enforcement: {require_hooks: true}
 ---

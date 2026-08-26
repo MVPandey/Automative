@@ -26,7 +26,7 @@ from automative.heartbeat import age_seconds, read_heartbeat
 from automative.paths import DOTDIR, ProjectPaths, find_root
 from automative.protocol import ProtocolVersion, manifest_sha, resolve_version, verify_integrity
 from automative.scope import Classification, classify
-from automative.spec import BudgetSpec, Direction, SpecDocument, compute_spec_sha, load_spec
+from automative.spec import BudgetSpec, SpecDocument, compute_spec_sha, load_spec
 from automative.state import (
     Best,
     Mode,
@@ -39,7 +39,16 @@ from automative.state import (
     now,
     save_state,
 )
-from automative.verify import GuardResult, GuardStatus, LocalRunner, Runner, VerifyResult, measure, run_guards
+from automative.verify import (
+    GuardResult,
+    GuardStatus,
+    LocalRunner,
+    Runner,
+    SudoRunner,
+    VerifyResult,
+    measure,
+    run_guards,
+)
 from automative.views import Brief, TryOutcome, render_brief, render_try
 
 __all__ = ['Brief', 'Project', 'RunLoop', 'TryOutcome', 'parse_prediction']
@@ -326,6 +335,13 @@ class RunLoop:
                 f'Baseline verify failed ({baseline.outcome.value}); fix the verify command before starting.\n'
                 f'{baseline.tail}'
             )
+        if spec.metric.heldout:
+            held = measure(self.heldout_runner, spec.metric.heldout, self.paths.root, spec.metric.timeout_s, 1, None)
+            if not held.ok:
+                raise VerifyError(
+                    f'Baseline held-out check failed ({held.outcome.value}); fix the heldout command before starting.\n'
+                    f'{held.tail}'
+                )
         branch = f'{BRANCH_PREFIX}/{started.strftime("%Y%m%d-%H%M")}-{run_id.rsplit("-", 1)[-1]}'
         if self.git.branch_exists(branch):
             raise GitError(f'Branch {branch} already exists')
@@ -470,22 +486,21 @@ class RunLoop:
             guard = run_guards(self.runner, metric.guard, self.paths.root, metric.timeout_s, log_path)
             improved = is_improvement(verify.score, best_before, metric.direction, metric.threshold)
             if improved and guard.status is not GuardStatus.FAIL and metric.heldout:
-                held_log = self.paths.heldout_log(state.run_id, iteration)
-                held = measure(self.runner, metric.heldout, self.paths.root, metric.timeout_s, 1, held_log)
-                heldout_ok = held.ok and self._heldout_not_worse(state, held.score)
-                heldout_verdict = 'pass' if heldout_ok else 'fail'
-                heldout_io.append(
-                    self.paths.heldout_file,
-                    heldout_io.HeldoutRecord(
-                        run_id=state.run_id,
-                        iter=iteration,
-                        ts=self.clock(),
-                        outcome=held.outcome,
-                        score=held.score,
-                        not_worse=heldout_ok,
-                        log=self.paths.relative(held_log),
-                    ),
+                verdict = heldout_io.paired_check(
+                    runner=self.heldout_runner,
+                    git=self.git,
+                    root=self.paths.root,
+                    cmd=metric.heldout,
+                    timeout_s=metric.timeout_s,
+                    direction=metric.direction,
+                    scope=spec.scope,
+                    protected=spec.protected,
+                    incumbent=state.best.commit,
+                    candidate=commit,
                 )
+                heldout_ok = verdict.passed
+                heldout_verdict = 'pass' if heldout_ok else 'fail'
+                self._event(state.run_id, 'heldout', verdict.reason, iter=iteration, passed=heldout_ok)
         decision = self.policy.judge(
             verify_outcome=verify.outcome,
             score=verify.score,
@@ -586,17 +601,43 @@ class RunLoop:
         self.record_shown('try', text, args={'iter': iteration})
         return replace(outcome, text=text)
 
-    def _heldout_not_worse(self, state: RunState, score: float | None) -> bool:
-        if score is None:
-            return False
-        kept = frozenset(
-            r.iter for r in ledger_io.iterations(self.paths.ledger_file, state.run_id) if r.decision is Outcome.KEEP
+    @property
+    def heldout_runner(self) -> Runner:
+        """The held-out command runs as another user when the contract names one."""
+        user = self.project.doc.spec.enforcement.heldout_user
+        return SudoRunner(user) if user else self.runner
+
+    def heldout_history(self, announce: Callable[[str], None] | None = None) -> tuple[heldout_io.HeldoutPoint, ...]:
+        """Re-measure the baseline and every kept commit on the held-out command. Finished runs only."""
+        state = self.require_state()
+        metric = self.project.doc.spec.metric
+        if state.status is not RunStatus.DONE:
+            raise StateError('Held-out numbers are available after `automative run end`, not during a run')
+        if metric.heldout is None:
+            raise StateError('This contract has no heldout command')
+        in_scope, protected_dirty, _other_dirty = self._classify_dirty()
+        if in_scope or protected_dirty:
+            raise ScopeError('Working tree has changes in scope or protected files; commit or discard them first')
+        if self.git.current_branch() != state.branch:
+            raise GitError(f'Check out {state.branch} first; the held-out history is measured on it')
+        points = [(0, state.baseline_commit)] + [
+            (r.iter, r.commit)
+            for r in ledger_io.iterations(self.paths.ledger_file, state.run_id)
+            if r.decision is Outcome.KEEP
+        ]
+        spec = self.project.doc.spec
+        return heldout_io.history(
+            runner=self.heldout_runner,
+            git=self.git,
+            root=self.paths.root,
+            cmd=metric.heldout,
+            timeout_s=metric.timeout_s,
+            scope=spec.scope,
+            protected=spec.protected,
+            head=self.git.head(),
+            points=points,
+            announce=announce,
         )
-        best_held = heldout_io.best_kept(self.paths.heldout_file, state.run_id, kept)
-        if best_held is None:
-            return True
-        direction = self.project.doc.spec.metric.direction
-        return score <= best_held if direction is Direction.LOWER else score >= best_held
 
     def _record_strategy_evidence(self, state: RunState, row: ledger_io.IterationRow) -> None:
         """Accrue evidence for the strategies cited on this try."""
@@ -740,7 +781,9 @@ class RunLoop:
             }
         )
         bookkeeping = tuple(
-            self.paths.relative(p) for p in (self.paths.ledger_file, self.paths.strategies_file) if p.is_file()
+            self.paths.relative(p)
+            for p in (self.paths.ledger_file, self.paths.strategies_file, self.paths.trace_file)
+            if p.is_file()
         )
         if bookkeeping and self.git.current_branch() == state.branch:
             self.git.stage(bookkeeping)

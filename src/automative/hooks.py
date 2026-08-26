@@ -5,6 +5,7 @@ handler is a no-op unless the working directory belongs to a project with an act
 """
 
 import contextlib
+import fnmatch
 import os
 import re
 from dataclasses import dataclass, field
@@ -15,6 +16,7 @@ from automative import budget as budget_rules
 from automative import ledger as ledger_io
 from automative import lock as lock_io
 from automative import strategies as strategy_io
+from automative import trace as trace_io
 from automative.errors import AutomativeError
 from automative.heartbeat import write_heartbeat
 from automative.paths import DOTDIR
@@ -27,7 +29,8 @@ __all__ = ['HookResponse', 'handle']
 
 EDIT_TOOLS = frozenset({'Edit', 'Write', 'MultiEdit', 'NotebookEdit'})
 READ_TOOLS = frozenset({'Read'})
-SEALED_RE = re.compile(r'\.automative/heldout\b|--heldout\b')
+PRIVILEGE_RE = re.compile(r'(^|[\s;&|(`])(sudo|doas|su)\b')
+TOKEN_SPLIT_RE = re.compile(r'[\s"\'`;|&()<>=]+')
 STALL_BLOCKS = 3
 
 GIT_WRITE_RE = re.compile(
@@ -150,9 +153,47 @@ def _touches(target: str, protected: tuple[str, ...], root: Path) -> bool:
     return any(absolute.startswith(r) for r in _protected_roots()) or bool(SETTINGS_RE.search(clean))
 
 
+def _is_sealed(rel: str, sealed: tuple[str, ...]) -> bool:
+    """Whether a project-relative path is one the contract sealed against reads (a file or a directory of them)."""
+    clean = rel.strip().rstrip('/')
+    while clean.startswith('./'):
+        clean = clean[2:]
+    if not clean or not sealed:
+        return False
+    for pattern in sealed:
+        if fnmatch.fnmatchcase(clean, pattern) or fnmatch.fnmatchcase(clean, pattern.replace('**/', '')):
+            return True
+        base = pattern.split('*', 1)[0].rstrip('/')
+        if base and (clean == base or clean.startswith(base + '/')):
+            return True
+    return False
+
+
+def _sealed_tokens(cmd: str, sealed: tuple[str, ...], loop: RunLoop) -> tuple[str, ...]:
+    """Tokens of a shell command that name a sealed path."""
+    hits = []
+    for token in TOKEN_SPLIT_RE.split(cmd):
+        if not token or token.startswith('-'):
+            continue
+        rel = _rel(loop, token) if token.startswith('/') else token
+        if rel is not None and _is_sealed(rel, sealed):
+            hits.append(token)
+    return tuple(hits)
+
+
 def _record_denial(loop: RunLoop, state: RunState, reason: str, **data: object) -> None:
     state.denied_tool_calls += 1
     loop._event(state.run_id, 'denied', reason, **data)
+    trace_io.append(
+        loop.paths.trace_file,
+        run_id=state.run_id,
+        ts=loop.clock(),
+        session_id=state.session_id,
+        tool=str(data.get('tool', '')),
+        tool_input={k: v for k, v in data.items() if k != 'tool'},
+        denied=True,
+        reason=reason,
+    )
     status = budget_rules.evaluate(state, loop._budget(), loop.project.doc.spec.metric)
     if status.should_stop and status.stop_reason is budget_rules.StopReason.DENIED_TOOL_CALLS:
         loop.halt(state, status.stop_reason, status.message, escalate=True)
@@ -173,8 +214,8 @@ def _pre_tool_use(loop: RunLoop, state: RunState, payload: dict[str, object]) ->
     if tool in READ_TOOLS:
         raw = str(tool_input.get('file_path') or '')
         rel = _rel(loop, raw)
-        if rel is not None and SEALED_RE.search(rel):
-            reason = 'held-out scores are sealed during a run; the harness only tells you pass or fail'
+        if rel is not None and _is_sealed(rel, spec.sealed):
+            reason = f'{rel} is sealed by the contract (held-out data); the harness only tells you pass or fail'
             _record_denial(loop, state, reason, tool=tool, path=rel)
             return _deny(reason)
         return HookResponse()
@@ -207,8 +248,17 @@ def _pre_tool_use(loop: RunLoop, state: RunState, payload: dict[str, object]) ->
         return HookResponse()
     if tool == 'Bash':
         cmd = str(tool_input.get('command', ''))
-        if SEALED_RE.search(cmd):
-            reason = 'held-out scores are sealed during a run; the harness only tells you pass or fail'
+        sealed_hits = _sealed_tokens(cmd, spec.sealed, loop)
+        if sealed_hits:
+            reason = f'sealed by the contract (held-out data): {", ".join(sorted(set(sealed_hits)))}'
+            _record_denial(loop, state, reason, tool=tool, command=cmd)
+            return _deny(reason)
+        if PRIVILEGE_RE.search(cmd):
+            reason = 'sudo, doas, and su are not allowed during a run'
+            _record_denial(loop, state, reason, tool=tool, command=cmd)
+            return _deny(reason)
+        if spec.metric.heldout and spec.metric.heldout in cmd:
+            reason = 'the held-out command is run by `automative try` only; its result is pass or fail'
             _record_denial(loop, state, reason, tool=tool, command=cmd)
             return _deny(reason)
         if NO_VERIFY_RE.search(cmd):
@@ -232,6 +282,15 @@ def _pre_tool_use(loop: RunLoop, state: RunState, payload: dict[str, object]) ->
 
 
 def _post_tool_use(loop: RunLoop, state: RunState, payload: dict[str, object]) -> HookResponse:
+    trace_io.append(
+        loop.paths.trace_file,
+        run_id=state.run_id,
+        ts=loop.clock(),
+        session_id=state.session_id,
+        tool=str(payload.get('tool_name', '')),
+        tool_input=payload.get('tool_input') or {},
+        response=payload.get('tool_response'),
+    )
     changed = lock_io.check(loop.paths.root, state.protected)
     if not changed:
         return HookResponse()

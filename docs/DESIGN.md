@@ -62,12 +62,16 @@ What still depends on the prompt: honest hypotheses, honest `--predict` values, 
 inside scope but pointless. The report's calibration numbers and the `heldout` command make those
 visible.
 
-Held-out scores are sealed. When the contract names a `heldout` command, a try that improved the
-training metric is re-measured on it before the decision, and the ledger, the verdict, and the
-iteration logs carry only `pass` or `fail`. The number goes to `.automative/heldout/`, which the hooks
-refuse to read (Read tool, shell reads, and `report --heldout`) while a run is active. Without this,
-every try is a peek at the held-out window and the agent selects on it; the first memecoin run showed
-exactly that. Humans read the numbers afterwards with `automative report --heldout`.
+Held-out scores are never written down. When the contract names a `heldout` command, a try that
+improved the training metric is measured on it together with the incumbent, in one invocation that
+swaps the in-scope files and swaps them back, and only `pass` or `fail` reaches the ledger and the
+verdict. The first memecoin run showed why: with the numbers in the ledger, every try was a peek and
+the agent selected on the held-out window. The data behind the command is declared under `sealed`;
+the hooks refuse to read it, refuse the held-out command outside `try`, and refuse `sudo`. Every tool
+call is recorded in `.automative/trace.jsonl`, and `audit` flags what the hooks did not catch. For
+data that must be unreadable rather than merely refused, `enforcement.heldout_user` runs the held-out
+command as a second OS user that owns the sealed files (`docs/SEALED-VERIFIER.md`). Humans get the
+numbers afterwards with `report --heldout`, which re-measures instead of remembering.
 
 ## Context is a cache
 

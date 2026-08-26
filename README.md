@@ -32,8 +32,10 @@ or into the plain prose constraints the agent rereads every iteration.
 4. Protected files (the verifier, the tests, the spec itself) are hashed at the start of the run.
    Editing one stops the run. Hooks refuse edits outside `scope` and direct git commands, and a Stop
    hook sends the agent back into the loop until the budget, a plateau, or the target ends it. If the
-   contract names a `heldout` command, every keep is re-checked on it, and the agent is told only
-   pass or fail: the numbers are sealed in `.automative/heldout/`, which the hooks refuse to read.
+   contract names a `heldout` command, every keep is re-checked on it against the incumbent in the
+   same breath, and the agent is told only pass or fail; no held-out number is ever written down.
+   Paths listed under `sealed` cannot be read, every tool call is traced, and `audit` flags anything
+   that got past the hooks. `docs/SEALED-VERIFIER.md` shows how to make the data unreadable outright.
 5. What the agent learns goes into a strategy catalogue. The protocol the agent follows is versioned;
    it only changes after a benchmark shows the new version does better, and one line pins it back.
 
@@ -145,9 +147,9 @@ One paragraph. The agent rereads it every iteration.
 | `run start`, `run pause`, `run resume`, `run end` | lifecycle; `start` measures the baseline and hashes the protected files |
 | `session brief` (alias `status`) | the short brief, at most 15 lines (exit 0 active, 3 done, 4 no run, 5 paused) |
 | `try -m ... --hypothesis ... [--predict] [--strategies]` | the one iteration primitive: commit, verify, decide, keep or revert, log |
-| `discard`, `verify`, `ledger`, `report` | recovery and inspection; `report --heldout` shows the sealed held-out scores (for humans, after the run) |
+| `discard`, `verify`, `ledger`, `report`, `trace` | recovery and inspection; `report --heldout` re-measures held-out on the baseline and every keep (finished runs only); `trace` lists the tool calls the hooks saw |
 | `checkout N`, `tree` | build the next try on an earlier attempt (0 is the baseline) instead of on the best; show the attempt tree |
-| `audit` | replay the ledger: was every try made against a brief the agent was actually shown, and does every stored text still match its hash |
+| `audit` | replay the ledger and the tool trace: was every try made against a brief the agent was shown, does every stored text match its hash, and did any call touch a sealed path, run the held-out command out of band, or escalate privilege |
 | `strategy add`, `show`, `suggest`, `set-status`, `merge`, `promote-global` | the learnings catalogue (an append only op log that the CLI curates) |
 | `protocol list`, `show`, `pin`, `install`, `candidate create`, `candidate validate`, `promote`, `reject`, `changelog` | the versioned protocol store, with bounded edits and instant rollback |
 | `bench freeze`, `list`, `run [--driver claude-p\|dsh\|manual]`, `report`; `evolve --propose`, `evolve --bench` | the benchmark suite and the promotion gate |

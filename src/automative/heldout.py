@@ -1,62 +1,112 @@
-"""The sealed record of held-out scores.
+"""The held-out check, done without ever writing a number down.
 
-Held-out numbers never appear where the agent can see them: not in the ledger, not in the try verdict,
-not in the iteration logs. They live here, in ``.automative/heldout/``, which the hooks refuse to read
-during a run, so the held-out window stays what it is meant to be: a check the agent cannot select on.
-Humans read it with ``automative report --heldout`` after the run.
+The harness needs one comparison per improving try: is the candidate's held-out score at least as good
+as the incumbent's? Rather than remember the incumbent's score (a number the agent could then go and
+read), ``paired_check`` measures both trees in the same invocation and keeps only the verdict. The
+scores exist in this process for a few seconds and nowhere else. ``history`` re-measures a finished
+run's baseline and kept commits for a human report.
+
+Both functions swap the in-scope files of the working tree between commits with a worktree-only
+restore and always put the candidate's files back, even when a measurement crashes, so untracked data
+next to the code (the usual case) is measured in place.
 """
 
-import json
-from datetime import datetime
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from automative.gitops import Git
+from automative.scope import Classification, classify
+from automative.spec import Direction
+from automative.verify import Runner, VerifyResult, measure
 
-from automative.errors import StateError
-from automative.verify import VerifyOutcome
-
-__all__ = ['HeldoutRecord', 'append', 'best_kept', 'read']
-
-
-class HeldoutRecord(BaseModel):
-    """One held-out measurement, taken when a try improved the training metric."""
-
-    model_config = ConfigDict(frozen=True, extra='forbid')
-
-    run_id: str
-    iter: int
-    ts: datetime
-    outcome: VerifyOutcome
-    score: float | None
-    not_worse: bool
-    log: str | None = None
+__all__ = ['HeldoutPoint', 'HeldoutVerdict', 'history', 'paired_check']
 
 
-def append(path: Path, record: HeldoutRecord) -> None:
-    """Append one record; the file is never rewritten."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open('a', encoding='utf-8') as handle:
-        handle.write(json.dumps(record.model_dump(mode='json'), separators=(',', ':')) + '\n')
+@dataclass(frozen=True, slots=True)
+class HeldoutVerdict:
+    """What ``try`` learns: pass or fail, and why when it could not compare."""
+
+    passed: bool
+    reason: str
 
 
-def read(path: Path, run_id: str | None = None) -> tuple[HeldoutRecord, ...]:
-    """Every record, optionally for one run."""
-    if not path.is_file():
-        return ()
-    rows: list[HeldoutRecord] = []
-    for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), start=1):
-        if not line.strip():
-            continue
-        try:
-            row = HeldoutRecord.model_validate_json(line)
-        except (ValidationError, ValueError) as exc:
-            raise StateError(f'Held-out record {path} line {number} is malformed: {exc}') from exc
-        if run_id is None or row.run_id == run_id:
-            rows.append(row)
-    return tuple(rows)
+@dataclass(frozen=True, slots=True)
+class HeldoutPoint:
+    """One re-measured commit in the human report."""
+
+    iteration: int
+    commit: str
+    result: VerifyResult
 
 
-def best_kept(path: Path, run_id: str, kept_iters: frozenset[int]) -> float | None:
-    """The held-out score of the most recent kept try, or ``None`` before the first one."""
-    scores = [r.score for r in read(path, run_id) if r.iter in kept_iters and r.score is not None]
-    return scores[-1] if scores else None
+def _scoped(git: Git, base: str, head: str, scope: Sequence[str], protected: Sequence[str]) -> tuple[str, ...]:
+    return tuple(
+        p
+        for p in git.changed_files(base, head)
+        if classify(p, tuple(scope), tuple(protected)) is Classification.IN_SCOPE
+    )
+
+
+@contextmanager
+def _tree_at(git: Git, current: str, target: str, scope: Sequence[str], protected: Sequence[str]) -> Iterator[None]:
+    """Temporarily make the working tree's in-scope files match ``target``; restore ``current`` on exit."""
+    paths = _scoped(git, current, target, scope, protected)
+    git.restore_from(target, paths)
+    try:
+        yield
+    finally:
+        git.restore_from(current, paths)
+
+
+def paired_check(
+    *,
+    runner: Runner,
+    git: Git,
+    root: Path,
+    cmd: str,
+    timeout_s: int,
+    direction: Direction,
+    scope: Sequence[str],
+    protected: Sequence[str],
+    incumbent: str,
+    candidate: str,
+) -> HeldoutVerdict:
+    """Measure the candidate (the current tree) and the incumbent commit; return only the verdict."""
+    cand = measure(runner, cmd, root, timeout_s, 1, None)
+    if not cand.ok:
+        return HeldoutVerdict(False, f'held-out check {cand.outcome.value} on the candidate')
+    with _tree_at(git, candidate, incumbent, scope, protected):
+        inc = measure(runner, cmd, root, timeout_s, 1, None)
+    if not inc.ok:
+        return HeldoutVerdict(False, f'held-out check {inc.outcome.value} on the incumbent')
+    assert cand.score is not None and inc.score is not None
+    not_worse = cand.score <= inc.score if direction is Direction.LOWER else cand.score >= inc.score
+    return HeldoutVerdict(
+        not_worse, 'held-out not worse than the incumbent' if not_worse else 'held-out metric regressed'
+    )
+
+
+def history(
+    *,
+    runner: Runner,
+    git: Git,
+    root: Path,
+    cmd: str,
+    timeout_s: int,
+    scope: Sequence[str],
+    protected: Sequence[str],
+    head: str,
+    points: Sequence[tuple[int, str]],
+    announce: Callable[[str], None] | None = None,
+) -> tuple[HeldoutPoint, ...]:
+    """Re-measure each ``(iteration, commit)`` on the held-out command, restoring ``head`` afterwards."""
+    out: list[HeldoutPoint] = []
+    for iteration, commit in points:
+        if announce:
+            announce(f'measuring i{iteration} ({commit})')
+        with _tree_at(git, head, commit, scope, protected):
+            result = measure(runner, cmd, root, timeout_s, 1, None)
+        out.append(HeldoutPoint(iteration=iteration, commit=commit, result=result))
+    return tuple(out)

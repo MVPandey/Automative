@@ -61,16 +61,9 @@ class ProjectPaths:
         return self.run_dir(run_id) / 'notes.md'
 
     @property
-    def heldout_dir(self) -> Path:
-        """Sealed: held-out scores and logs. Hooks refuse to read it during a run."""
-        return self.dotdir / 'heldout'
-
-    @property
-    def heldout_file(self) -> Path:
-        return self.heldout_dir / 'scores.jsonl'
-
-    def heldout_log(self, run_id: str, iteration: int) -> Path:
-        return self.heldout_dir / f'{run_id}-iter-{iteration:03d}.log'
+    def trace_file(self) -> Path:
+        """Every tool call the hooks saw, committed with the ledger at ``run end``."""
+        return self.dotdir / 'trace.jsonl'
 
     def relative(self, path: Path) -> str:
         """Return ``path`` as a posix string relative to the project root."""

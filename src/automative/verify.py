@@ -5,6 +5,7 @@ produced from a subprocess the CLI controlled.
 """
 
 import re
+import shlex
 import statistics
 import subprocess
 import time
@@ -20,6 +21,7 @@ __all__ = [
     'GuardStatus',
     'LocalRunner',
     'Runner',
+    'SudoRunner',
     'VerifyOutcome',
     'VerifyResult',
     'measure',
@@ -79,6 +81,35 @@ class LocalRunner:
             err = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or '')
             return CommandResult(None, out, err, time.monotonic() - started, True)
         except OSError as exc:
+            return CommandResult(127, '', str(exc), time.monotonic() - started, False)
+        return CommandResult(proc.returncode, proc.stdout, proc.stderr, time.monotonic() - started, False)
+
+
+@dataclass(frozen=True, slots=True)
+class SudoRunner:
+    """Runs a command as another OS user through ``sudo -n -u USER -- ARGV``.
+
+    Meant for the held-out command: the held-out data is owned by ``user`` with mode 700, and a sudoers
+    rule lets the harness's user run exactly this command as ``user`` and nothing else. The command is
+    split into argv (no shell), so the sudoers rule can name it precisely.
+    """
+
+    user: str
+
+    def argv(self, cmd: str) -> list[str]:
+        return ['sudo', '-n', '-u', self.user, '--', *shlex.split(cmd)]
+
+    def run(self, cmd: str, cwd: Path, timeout_s: int) -> CommandResult:
+        started = time.monotonic()
+        try:
+            proc = subprocess.run(
+                self.argv(cmd), cwd=cwd, capture_output=True, text=True, timeout=timeout_s, check=False
+            )
+        except subprocess.TimeoutExpired as exc:
+            out = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or '')
+            err = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or '')
+            return CommandResult(None, out, err, time.monotonic() - started, True)
+        except (OSError, ValueError) as exc:
             return CommandResult(127, '', str(exc), time.monotonic() - started, False)
         return CommandResult(proc.returncode, proc.stdout, proc.stderr, time.monotonic() - started, False)
 

@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 from automative.audit import AuditResult
 from automative.disclosure import disclosure_card
-from automative.heldout import HeldoutRecord
+from automative.heldout import HeldoutPoint
 from automative.ledger import IterationRow, RunSummary
 from automative.views import Brief, TryOutcome, fmt, pct, render_brief, render_try
 
@@ -104,19 +104,21 @@ def render_audit(result: AuditResult) -> str:
         lines.append(
             'Shown rows whose text does not match its hash (ledger lines): ' + ', '.join(map(str, result.corrupt_shown))
         )
-    lines.append('OK: every try cites a view the agent was shown.' if result.ok else 'FAILED')
+    if result.tool_calls:
+        lines.append(f'Tool trace: {result.tool_calls} calls, {result.denials} refused by hooks')
+    for finding in result.trace_findings:
+        lines.append(f'! {finding}')
+    lines.append('OK: every try cites a view the agent was shown and the trace is clean.' if result.ok else 'FAILED')
     return '\n'.join(lines)
 
 
-def render_heldout(records: Sequence[HeldoutRecord], kept: set[int]) -> str:
-    """The sealed held-out history, for a human after the run."""
-    if not records:
-        return '(no held-out measurements: none configured, or no try improved the training metric)'
-    lines = ['iter  kept  held-out   verdict']
-    for r in records:
-        score = '-' if r.score is None else f'{r.score:g}'
-        verdict = 'pass' if r.not_worse else 'fail'
-        if r.outcome.value != 'ok':
-            verdict = r.outcome.value
-        lines.append(f'{r.iter:<5} {"yes" if r.iter in kept else "no":<5} {score:<10} {verdict}')
+def render_heldout(points: Sequence[HeldoutPoint], kept: set[int]) -> str:
+    """The re-measured held-out history, for a human after the run."""
+    if not points:
+        return '(no held-out measurements)'
+    lines = ['iter  commit      held-out']
+    for p in points:
+        score = p.result.score if p.result.ok else p.result.outcome.value
+        label = 'baseline' if p.iteration == 0 else f'i{p.iteration}'
+        lines.append(f'{label:<5} {p.commit:<11} {score if isinstance(score, str) else f"{score:g}"}')
     return '\n'.join(lines)

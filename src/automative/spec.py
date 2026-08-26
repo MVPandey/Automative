@@ -119,6 +119,7 @@ class EnforcementSpec(BaseModel):
     require_hooks: bool = True
     heartbeat_max_age_s: int = Field(default=120, ge=10)
     logged_context: bool = True
+    heldout_user: str | None = None
 
 
 class Spec(BaseModel):
@@ -132,6 +133,7 @@ class Spec(BaseModel):
     metric: MetricSpec
     scope: tuple[str, ...]
     protected: tuple[str, ...] = ()
+    sealed: tuple[str, ...] = ()
     budget: BudgetSpec = BudgetSpec()
     enforcement: EnforcementSpec = EnforcementSpec()
 
@@ -142,7 +144,7 @@ class Spec(BaseModel):
             raise ValueError(f'protocol must be a semver string, got {value!r}')
         return value
 
-    @field_validator('scope', 'protected', 'tags', mode='before')
+    @field_validator('scope', 'protected', 'sealed', 'tags', mode='before')
     @classmethod
     def _coerce_tuple(cls, value: object) -> object:
         if value is None:

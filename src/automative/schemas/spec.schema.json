@@ -57,6 +57,18 @@
           "title": "Heartbeat Max Age S",
           "type": "integer"
         },
+        "heldout_user": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout User"
+        },
         "logged_context": {
           "default": true,
           "title": "Logged Context",
@@ -170,6 +182,7 @@
       "$ref": "#/$defs/EnforcementSpec",
       "default": {
         "heartbeat_max_age_s": 120,
+        "heldout_user": null,
         "logged_context": true,
         "require_hooks": true
       }
@@ -195,6 +208,14 @@
         "type": "string"
       },
       "title": "Scope",
+      "type": "array"
+    },
+    "sealed": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Sealed",
       "type": "array"
     },
     "tags": {

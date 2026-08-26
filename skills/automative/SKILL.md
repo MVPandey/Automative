@@ -33,8 +33,8 @@ through the CLI so the right version is used and its integrity is checked.
    yourself. Never ask whether to continue. The harness ends the run. To build on an earlier attempt
    instead of the best (a crash worth fixing, a near miss worth combining), run
    `automative checkout N` first; `automative tree` shows the attempts. If the contract has a
-   `heldout` command, the verdict says only pass or fail for it; the numbers are sealed and the hooks
-   refuse to read them. Do not try.
+   `heldout` command, the verdict says only pass or fail for it. Paths under `sealed` and the
+   held-out command itself are off limits; the hooks refuse them and every call is recorded.
 4. Write everything a person will read later (commit messages, hypotheses, strategies, summaries)
    in plain English: one idea per sentence, name the actor, give the number, no filler, no em
    dashes, no claims of significance. The protocol's `references/writing.md` has the rules.

@@ -152,11 +152,57 @@ def doctor() -> None:
     else:
         problems.append(f'verify failed ({result.outcome.value}): {result.tail[-300:]}')
     typer.echo('Claude CLI: ' + ('found' if shutil.which('claude') else 'not on PATH (needed for bench driver only)'))
+    problems.extend(_doctor_sealed(project))
     if problems:
         for problem in problems:
             typer.echo(f'PROBLEM: {problem}', err=True)
         raise typer.Exit(code=1)
     typer.echo('All checks passed.')
+
+
+def _doctor_sealed(project: Project) -> list[str]:
+    """Check the sealed-verifier setup: sealed paths unreadable by us, readable by the held-out user, sudo works."""
+    import glob  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+
+    from automative.verify import SudoRunner  # noqa: PLC0415
+
+    spec = project.doc.spec
+    problems: list[str] = []
+    files = [p for pattern in spec.sealed for p in glob.glob(str(project.paths.root / pattern), recursive=True)]
+    files = [f for f in files if Path(f).is_file()]
+    user = spec.enforcement.heldout_user
+    if spec.sealed:
+        readable = [f for f in files if os.access(f, os.R_OK)]
+        if user is None:
+            typer.echo(
+                f'Sealed: {len(files)} files listed; hooks refuse reads '
+                '(no heldout_user, so they stay readable on disk)'
+            )
+        elif readable:
+            problems.append(
+                f'sealed files are readable by this user (chown them to {user}, mode 700): ' + ', '.join(readable[:3])
+            )
+        else:
+            typer.echo(f'Sealed: {len(files)} files, none readable by this user')
+    if user:
+        if spec.metric.heldout is None:
+            problems.append('enforcement.heldout_user is set but metric.heldout is not')
+        else:
+            probe = subprocess.run(
+                ['sudo', '-n', '-u', user, '--', 'true'], capture_output=True, text=True, check=False
+            )
+            if probe.returncode != 0:
+                problems.append(f'`sudo -n -u {user}` does not work without a password: {probe.stderr.strip()[:200]}')
+            else:
+                typer.echo(f'Held-out user: {user} (sudo ok; argv {SudoRunner(user).argv(spec.metric.heldout)})')
+            for f in files[:1]:
+                check = subprocess.run(
+                    ['sudo', '-n', '-u', user, '--', 'test', '-r', f], capture_output=True, check=False
+                )
+                if check.returncode != 0:
+                    problems.append(f'{user} cannot read sealed file {f}')
+    return problems
 
 
 # ----- run lifecycle -------------------------------------------------------------------------------------
@@ -326,7 +372,18 @@ def audit(
         run_id = run or (state.run_id if state else None)
         if run_id is None:
             raise AutomativeError('No run to audit')
-        result = audit_io.audit(ledger_io.read(loop.paths.ledger_file), run_id)
+        from automative import trace as trace_io  # noqa: PLC0415
+        from automative.hooks import _is_sealed  # noqa: PLC0415
+
+        spec = loop.project.doc.spec
+        result = audit_io.audit(
+            ledger_io.read(loop.paths.ledger_file),
+            run_id,
+            trace=trace_io.read(loop.paths.trace_file, run_id),
+            sealed=spec.sealed,
+            heldout_cmd=spec.metric.heldout,
+            is_sealed=_is_sealed,
+        )
     except AutomativeError as exc:
         _fail(exc)
         return
@@ -411,12 +468,13 @@ def ledger(
 def report_cmd(
     run: Annotated[str | None, typer.Option('--run')] = None,
     heldout: Annotated[
-        bool, typer.Option('--heldout', help='Also print the sealed held-out scores (for humans, after the run).')
+        bool,
+        typer.Option(
+            '--heldout', help='Re-measure held-out on the baseline and every kept commit (finished runs only).'
+        ),
     ] = False,
 ) -> None:
     """Summarize a run."""
-    from automative import heldout as heldout_io  # noqa: PLC0415 - keep base CLI import light
-
     try:
         loop = _loop()
         state = loop.load_state()
@@ -431,9 +489,45 @@ def report_cmd(
     loop.record_shown('report', text, store_text=False, args={'run': run_id})
     typer.echo(text)
     if heldout:
-        records = heldout_io.read(loop.paths.heldout_file, run_id)
+        try:
+            with run_lock(loop.paths.dotdir):
+                points = loop.heldout_history(announce=lambda m: typer.echo(m, err=True))
+        except AutomativeError as exc:
+            _fail(exc)
+            return
         kept = {r.iter for r in ledger_io.iterations(loop.paths.ledger_file, run_id) if r.decision.value == 'keep'}
-        typer.echo(report.render_heldout(records, kept))
+        typer.echo(report.render_heldout(points, kept))
+
+
+@app.command('trace')
+def trace_cmd(
+    last: int = 20,
+    run: Annotated[str | None, typer.Option('--run')] = None,
+    json_: Annotated[bool, typer.Option('--json')] = False,
+) -> None:
+    """Show the tool calls the hooks recorded for a run."""
+    from automative import trace as trace_io  # noqa: PLC0415 - keep base CLI import light
+
+    try:
+        loop = _loop()
+        state = loop.load_state()
+        run_id = run or (state.run_id if state else None)
+        rows = trace_io.read(loop.paths.trace_file, run_id)
+    except AutomativeError as exc:
+        _fail(exc)
+        return
+    rows = rows[-last:] if last > 0 else rows
+    if json_:
+        text = '\n'.join(r.model_dump_json() for r in rows)
+    else:
+        lines = []
+        for r in rows:
+            head = r.input.get('command') or r.input.get('file_path') or r.input.get('path') or ''
+            flag = ' DENIED' if r.denied else ''
+            lines.append(f'{r.ts:%H:%M:%S} {r.tool:<8}{flag} {str(head)[:90]}')
+        text = '\n'.join(lines) or '(no tool calls recorded)'
+    loop.record_shown('trace', text, store_text=False, args={'last': last, 'run': run_id})
+    typer.echo(text)
 
 
 # ----- protocol store ------------------------------------------------------------------------------------
