@@ -128,6 +128,8 @@ def render_try(outcome: TryOutcome) -> str:
         f'{pct(row.delta_pct)}, guard {row.guard.status.value}, verify {row.verify.runtime_s:.1f}s'
     )
     lines = [head, detail]
+    if row.heldout is not None:
+        lines.append(f'Held-out check: {row.heldout} (the number stays sealed; you only ever see pass or fail).')
     if row.decision is Outcome.KEEP:
         lines.append(f'Kept commit {row.commit}; new best {fmt(outcome.best)}.')
     elif row.revert_commit:

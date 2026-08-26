@@ -44,9 +44,10 @@ What the numbers say, and what they do not:
 - Five of eight tries improved the training return, two of them by a lot, and every one of the five
   was discarded because the held-out return fell. That is the held-out check doing its job: the
   changes that fit the training window best were the ones that did not carry.
-- The held-out number is not clean after this. The agent could see each try's held-out score in the
-  ledger, so eight tries are eight selections on the held-out window. The cleanest single number is
-  try 1's +14.4%, made before any selection happened. The final +16.9% should be read as "somewhere
+- The held-out number is not clean after this. At the time of this run the agent could see each
+  try's held-out score in the ledger, so eight tries were eight selections on the held-out window.
+  (Fixed since: held-out numbers are now sealed and the agent sees only pass or fail.) The cleanest
+  single number is try 1's +14.4%, made before any selection happened. The final +16.9% should be read as "somewhere
   above buy and hold on one 36 day window", not as an expected return.
 - 36 days of one basket is one sample of one regime. The rule that survived (slow trend with
   hysteresis, low turnover, volume confirmation) is a conventional shape rather than an exotic fit,

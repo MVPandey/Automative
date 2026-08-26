@@ -26,6 +26,8 @@ from automative.views import render_brief
 __all__ = ['HookResponse', 'handle']
 
 EDIT_TOOLS = frozenset({'Edit', 'Write', 'MultiEdit', 'NotebookEdit'})
+READ_TOOLS = frozenset({'Read'})
+SEALED_RE = re.compile(r'\.automative/heldout\b|--heldout\b')
 STALL_BLOCKS = 3
 
 GIT_WRITE_RE = re.compile(
@@ -168,6 +170,14 @@ def _pre_tool_use(loop: RunLoop, state: RunState, payload: dict[str, object]) ->
     if not isinstance(tool_input, dict):
         return HookResponse()
     spec = loop.project.doc.spec
+    if tool in READ_TOOLS:
+        raw = str(tool_input.get('file_path') or '')
+        rel = _rel(loop, raw)
+        if rel is not None and SEALED_RE.search(rel):
+            reason = 'held-out scores are sealed during a run; the harness only tells you pass or fail'
+            _record_denial(loop, state, reason, tool=tool, path=rel)
+            return _deny(reason)
+        return HookResponse()
     if tool in EDIT_TOOLS:
         raw = str(tool_input.get('file_path') or tool_input.get('notebook_path') or '')
         if _is_harness_path(raw):
@@ -197,6 +207,10 @@ def _pre_tool_use(loop: RunLoop, state: RunState, payload: dict[str, object]) ->
         return HookResponse()
     if tool == 'Bash':
         cmd = str(tool_input.get('command', ''))
+        if SEALED_RE.search(cmd):
+            reason = 'held-out scores are sealed during a run; the harness only tells you pass or fail'
+            _record_denial(loop, state, reason, tool=tool, command=cmd)
+            return _deny(reason)
         if NO_VERIFY_RE.search(cmd):
             reason = '`--no-verify` is never allowed during a run'
             _record_denial(loop, state, reason, tool=tool, command=cmd)

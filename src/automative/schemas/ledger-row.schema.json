@@ -180,6 +180,22 @@
         "guard": {
           "$ref": "#/$defs/GuardRecord"
         },
+        "heldout": {
+          "anyOf": [
+            {
+              "enum": [
+                "pass",
+                "fail"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Heldout"
+        },
         "heldout_score": {
           "anyOf": [
             {

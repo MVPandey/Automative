@@ -60,6 +60,18 @@ class ProjectPaths:
     def notes_file(self, run_id: str) -> Path:
         return self.run_dir(run_id) / 'notes.md'
 
+    @property
+    def heldout_dir(self) -> Path:
+        """Sealed: held-out scores and logs. Hooks refuse to read it during a run."""
+        return self.dotdir / 'heldout'
+
+    @property
+    def heldout_file(self) -> Path:
+        return self.heldout_dir / 'scores.jsonl'
+
+    def heldout_log(self, run_id: str, iteration: int) -> Path:
+        return self.heldout_dir / f'{run_id}-iter-{iteration:03d}.log'
+
     def relative(self, path: Path) -> str:
         """Return ``path`` as a posix string relative to the project root."""
         return path.resolve().relative_to(self.root.resolve()).as_posix()

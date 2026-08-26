@@ -35,9 +35,9 @@ interface BashArgs { readonly command?: unknown }
 
 /**
  * Map a dsh tool call to the `{tool_name, tool_input}` pair the CLI expects.
- * dsh's `edit`/`write` become Claude Code's `Edit`/`Write`; `bash` becomes `Bash`. Any other tool
- * (read, search, web, subagents) returns `undefined`: it cannot change files, so the CLI has nothing
- * to say about it.
+ * dsh's `edit`/`write` become Claude Code's `Edit`/`Write`, `bash` becomes `Bash`, and `read` becomes
+ * `Read` (the CLI seals the held-out directory against reads). Any other tool (search, web, subagents)
+ * returns `undefined`: the CLI has nothing to say about it.
  */
 export function toolPayload(name: string, args: unknown): { tool_name: string; tool_input: Record<string, unknown> } | undefined {
   const record = (args !== null && typeof args === 'object') ? args as Record<string, unknown> : {}
@@ -50,6 +50,10 @@ export function toolPayload(name: string, args: unknown): { tool_name: string; t
     case 'bash': {
       const command = (record as BashArgs).command
       return { tool_name: 'Bash', tool_input: { command: typeof command === 'string' ? command : '' } }
+    }
+    case 'read': {
+      const filePath = (record as EditArgs).file_path
+      return { tool_name: 'Read', tool_input: { file_path: typeof filePath === 'string' ? filePath : '' } }
     }
     default:
       return undefined

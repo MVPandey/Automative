@@ -84,7 +84,8 @@ class IterationRow(BaseModel):
     files_changed: tuple[str, ...] = ()
     verify: VerifyRecord
     guard: GuardRecord
-    heldout_score: float | None = None
+    heldout: Literal['pass', 'fail'] | None = None
+    heldout_score: float | None = None  # legacy rows only; numbers now live in the sealed sidecar
     best_before: float
     observed_delta: float | None = None
     delta_pct: float | None = None

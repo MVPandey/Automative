@@ -408,8 +408,15 @@ def ledger(
 
 
 @app.command('report')
-def report_cmd(run: Annotated[str | None, typer.Option('--run')] = None) -> None:
+def report_cmd(
+    run: Annotated[str | None, typer.Option('--run')] = None,
+    heldout: Annotated[
+        bool, typer.Option('--heldout', help='Also print the sealed held-out scores (for humans, after the run).')
+    ] = False,
+) -> None:
     """Summarize a run."""
+    from automative import heldout as heldout_io  # noqa: PLC0415 - keep base CLI import light
+
     try:
         loop = _loop()
         state = loop.load_state()
@@ -423,6 +430,10 @@ def report_cmd(run: Annotated[str | None, typer.Option('--run')] = None) -> None
     text = report.render_summary(summary)
     loop.record_shown('report', text, store_text=False, args={'run': run_id})
     typer.echo(text)
+    if heldout:
+        records = heldout_io.read(loop.paths.heldout_file, run_id)
+        kept = {r.iter for r in ledger_io.iterations(loop.paths.ledger_file, run_id) if r.decision.value == 'keep'}
+        typer.echo(report.render_heldout(records, kept))
 
 
 # ----- protocol store ------------------------------------------------------------------------------------

@@ -31,7 +31,9 @@ or into the plain prose constraints the agent rereads every iteration.
    to the ledger. The agent only ever sees the score that `try` printed.
 4. Protected files (the verifier, the tests, the spec itself) are hashed at the start of the run.
    Editing one stops the run. Hooks refuse edits outside `scope` and direct git commands, and a Stop
-   hook sends the agent back into the loop until the budget, a plateau, or the target ends it.
+   hook sends the agent back into the loop until the budget, a plateau, or the target ends it. If the
+   contract names a `heldout` command, every keep is re-checked on it, and the agent is told only
+   pass or fail: the numbers are sealed in `.automative/heldout/`, which the hooks refuse to read.
 5. What the agent learns goes into a strategy catalogue. The protocol the agent follows is versioned;
    it only changes after a benchmark shows the new version does better, and one line pins it back.
 
@@ -143,7 +145,7 @@ One paragraph. The agent rereads it every iteration.
 | `run start`, `run pause`, `run resume`, `run end` | lifecycle; `start` measures the baseline and hashes the protected files |
 | `session brief` (alias `status`) | the short brief, at most 15 lines (exit 0 active, 3 done, 4 no run, 5 paused) |
 | `try -m ... --hypothesis ... [--predict] [--strategies]` | the one iteration primitive: commit, verify, decide, keep or revert, log |
-| `discard`, `verify`, `ledger`, `report` | recovery and inspection |
+| `discard`, `verify`, `ledger`, `report` | recovery and inspection; `report --heldout` shows the sealed held-out scores (for humans, after the run) |
 | `checkout N`, `tree` | build the next try on an earlier attempt (0 is the baseline) instead of on the best; show the attempt tree |
 | `audit` | replay the ledger: was every try made against a brief the agent was actually shown, and does every stored text still match its hash |
 | `strategy add`, `show`, `suggest`, `set-status`, `merge`, `promote-global` | the learnings catalogue (an append only op log that the CLI curates) |

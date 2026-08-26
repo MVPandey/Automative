@@ -10,9 +10,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from automative import budget as budget_rules
 from automative import evolution
+from automative import heldout as heldout_io
 from automative import ledger as ledger_io
 from automative import lock as lock_io
 from automative import strategies as strategy_io
@@ -462,15 +464,28 @@ class RunLoop:
         log_path = iter_dir / 'verify.log'
         verify = self._measure(log_path)
         guard = GuardResult(GuardStatus.NONE, None, '')
-        heldout_score: float | None = None
+        heldout_verdict: Literal['pass', 'fail'] | None = None
         heldout_ok = True
         if verify.ok and verify.score is not None:
             guard = run_guards(self.runner, metric.guard, self.paths.root, metric.timeout_s, log_path)
             improved = is_improvement(verify.score, best_before, metric.direction, metric.threshold)
             if improved and guard.status is not GuardStatus.FAIL and metric.heldout:
-                held = measure(self.runner, metric.heldout, self.paths.root, metric.timeout_s, 1, log_path)
-                heldout_score = held.score
+                held_log = self.paths.heldout_log(state.run_id, iteration)
+                held = measure(self.runner, metric.heldout, self.paths.root, metric.timeout_s, 1, held_log)
                 heldout_ok = held.ok and self._heldout_not_worse(state, held.score)
+                heldout_verdict = 'pass' if heldout_ok else 'fail'
+                heldout_io.append(
+                    self.paths.heldout_file,
+                    heldout_io.HeldoutRecord(
+                        run_id=state.run_id,
+                        iter=iteration,
+                        ts=self.clock(),
+                        outcome=held.outcome,
+                        score=held.score,
+                        not_worse=heldout_ok,
+                        log=self.paths.relative(held_log),
+                    ),
+                )
         decision = self.policy.judge(
             verify_outcome=verify.outcome,
             score=verify.score,
@@ -541,7 +556,7 @@ class RunLoop:
                 log=self.paths.relative(log_path),
             ),
             guard=ledger_io.GuardRecord(status=guard.status, failed_cmd=guard.failed_cmd),
-            heldout_score=heldout_score,
+            heldout=heldout_verdict,
             best_before=best_before,
             observed_delta=decision.delta,
             delta_pct=decision.delta_pct,
@@ -574,11 +589,12 @@ class RunLoop:
     def _heldout_not_worse(self, state: RunState, score: float | None) -> bool:
         if score is None:
             return False
-        rows = ledger_io.iterations(self.paths.ledger_file, state.run_id)
-        previous = [r.heldout_score for r in rows if r.decision is Outcome.KEEP and r.heldout_score is not None]
-        if not previous:
+        kept = frozenset(
+            r.iter for r in ledger_io.iterations(self.paths.ledger_file, state.run_id) if r.decision is Outcome.KEEP
+        )
+        best_held = heldout_io.best_kept(self.paths.heldout_file, state.run_id, kept)
+        if best_held is None:
             return True
-        best_held = previous[-1]
         direction = self.project.doc.spec.metric.direction
         return score <= best_held if direction is Direction.LOWER else score >= best_held
 

@@ -62,6 +62,13 @@ What still depends on the prompt: honest hypotheses, honest `--predict` values, 
 inside scope but pointless. The report's calibration numbers and the `heldout` command make those
 visible.
 
+Held-out scores are sealed. When the contract names a `heldout` command, a try that improved the
+training metric is re-measured on it before the decision, and the ledger, the verdict, and the
+iteration logs carry only `pass` or `fail`. The number goes to `.automative/heldout/`, which the hooks
+refuse to read (Read tool, shell reads, and `report --heldout`) while a run is active. Without this,
+every try is a peek at the held-out window and the agent selects on it; the first memecoin run showed
+exactly that. Humans read the numbers afterwards with `automative report --heldout`.
+
 ## Context is a cache
 
 The agent gets a brief of at most 15 lines every iteration (`session brief`). The SessionStart hook

@@ -15,7 +15,11 @@ test('tool payloads map dsh tools onto the CLI dialect', () => {
     tool_name: 'Bash',
     tool_input: { command: 'git commit -m x' },
   })
-  assert.equal(toolPayload('read', { file_path: 'x' }), undefined)
+  assert.deepEqual(toolPayload('read', { file_path: '.automative/heldout/scores.jsonl' }), {
+    tool_name: 'Read',
+    tool_input: { file_path: '.automative/heldout/scores.jsonl' },
+  })
+  assert.equal(toolPayload('grep', { pattern: 'x' }), undefined)
   assert.equal(toolPayload('bash', null)?.tool_input['command'], '')
 })
 
